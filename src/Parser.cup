@@ -1,0 +1,24 @@
+import java_cup.runtime.*;
+import java.util.*;
+
+parser code {:
+    public void report_error(String message, Object info) {
+        System.err.println("Error sintáctico: " + message);
+    }
+:};
+
+/* DECLARACIÓN DE TERMINALES */
+// Acá definís tus tokens
+terminal PLAN;
+terminal String TextoComillas;
+
+/* DECLARACIÓN DE NO TERMINALES */
+// Acá definís tus no terminales
+non terminal encabezado;
+
+/* SÍMBOLO INICIAL */
+// start with ...;
+start with encabezado;
+
+/* GRAMÁTICA */
+encabezado ::=plan TextoComillas
