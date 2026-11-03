@@ -1,18 +1,37 @@
 import java_cup.runtime.*;
 
+/* Código que se copia dentro de la clase del parser. */
 parser code {:
+  // CUP lo llama cuando llega un token que la gramática no espera (error sintáctico).
   public void syntax_error(Symbol s) {
     System.err.println("Error sintáctico, línea " + s.left + ", cerca de: " + s.value);
   }
 :};
 
-terminal PLAN, SEMANAS;
-terminal String CADENA;
+/* Tokens que produce el lexer. El tipo (String/Integer) es el valor que cargan. */
+terminal PLAN, SEMANAS, DIA, NIVEL;
+terminal String CADENA, PALABRA;
 terminal Integer ENTERO;
 
+/* Reglas de la gramática. dia y nivel devuelven un String (RESULT). */
 non terminal plan;
+non terminal String dia, nivel;
 
-plan ::= PLAN CADENA:nombre SEMANAS ENTERO:n
+/* Día: <palabra>. dleft = línea de la palabra, usada para reportar el error. */
+dia ::= DIA PALABRA:d
+      {: if (!Validador.esDia(d)) Validador.error(dleft, "día inválido '" + d + "'");
+         RESULT = d; :}
+      ;
+
+/* Nivel: <palabra>. El lexer acepta cualquier palabra; acá se valida que sea un nivel real. */
+nivel ::= NIVEL PALABRA:n
+        {: if (!Validador.esNivel(n)) Validador.error(nleft, "nivel inválido '" + n + "'");
+           RESULT = n; :}
+        ;
+
+/* Encabezado: PLAN "nombre" Nivel: X Semanas: N
+   Validación semántica: las semanas deben estar entre 1 y 52. */
+plan ::= PLAN CADENA:nombre nivel SEMANAS ENTERO:n
        {: if (n < 1 || n > 52) System.err.println("Error semántico: Semanas fuera de rango (" + n + ")");
           else System.out.println("OK: " + nombre + ", " + n + " semanas"); :}
        ;
