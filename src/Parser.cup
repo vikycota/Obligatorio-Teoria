@@ -1,0 +1,57 @@
+import java_cup.runtime.*;
+import java.util.*;
+
+parser code {:
+    public void report_error(String message, Object info) {
+        System.err.println("Error sintáctico: " + message);
+    }
+:};
+
+/* DECLARACIÓN DE TERMINALES */
+// Acá definís tus tokens
+terminal PLAN;
+terminal String TextoComillas;
+terminal NIVEL;
+terminal String TextoSinComillas;
+terminal CorcheteAbre;
+terminal CorcheteCierra;
+terminal Coma;
+terminal Objetivos;
+terminal Integer NUMERO;
+terminal Semanas;
+terminal Profe;
+terminal Fecha;
+terminal Barra;
+
+/* DECLARACIÓN DE NO TERMINALES */
+// Acá definís tus no terminales
+non terminal encabezado1;
+non terminal encabezado2;
+non terminal encabezado3;
+non terminal palabraComa;
+non terminal encabezado4;
+non terminal encabezado5;
+non terminal encabezado6;
+
+/* SÍMBOLO INICIAL */
+// start with ...;
+start with encabezado6;
+
+/* GRAMÁTICA */
+encabezado1 ::= PLAN TextoComillas;
+encabezado2 ::= encabezado1 NIVEL TextoSinComillas;
+encabezado3 ::= encabezado2 Objetivos CorcheteAbre palabraComa CorcheteCierra;
+palabraComa ::= TextoSinComillas Coma palabraComa | TextoSinComillas; //(texto coma)*texto
+encabezado4 ::= encabezado3 Semanas NUMERO:n
+{:if (n < 1 || n > 52) { System.err.println("Error: las semanas deben estar entre 1 y 52");}:};
+//{: ... :} permite ejecutar código Java.
+//la parte de las especificaciones tienen que ir antes del ; de la expreción
+encabezado5 ::= encabezado4 Profe TextoComillas;
+encabezado6 ::= encabezado5 Fecha NUMERO:a Barra NUMMes:b Barra NUMERO:c
+{: if (a<1||b<1||b>12||c<1||a>31||(b==4 && a==31)||(b==6 && a==31)||(b==9 && a==31) ||(b==11 && a==31)) {System.err.println("Error: Fecha invalida");}
+    // Calcular si el año es bisiesto
+    boolean bisiesto = (c % 4 == 0 && c % 100 != 0)|| (c % 400 == 0);
+    // Validar febrero
+    if (b == 2) {
+        if (bisiesto && a > 29) {System.err.println("Error: Fecha invalida");}
+        else if (!bisiesto && a > 28) {System.err.println("Error: Fecha invalida");}}:};
