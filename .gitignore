@@ -1,0 +1,5 @@
+*.class
+*~
+src/Lexer.java
+src/parser.java
+src/sym.java
