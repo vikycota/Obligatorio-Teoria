@@ -355,9 +355,7 @@ valor_extra ::= nombre:n  {: RESULT = n; :}
               ;
 
 /* =====================================================================
-   PROVISORIO - Persona 2 (ejercicios) y Persona 3 (Igual a)
-   Solo para que las rutinas compilen y se puedan probar.
-   Ellas reemplazan esta parte con la versión real.
+   PROVISORIO - tenemos que reemplazar
    ===================================================================== */
 
 /* devuelve true si la rutina usa Igual a */
