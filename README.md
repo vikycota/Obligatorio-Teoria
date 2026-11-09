@@ -113,10 +113,6 @@ Si `LUNES`, `MARTES`, … fueran tokens, `Lunez` produciría un error sintáctic
 | 2 | Validación palabra por palabra: reconocimiento de cada token y validación de su valor en las acciones semánticas |
 | 3 | El resto: tipos de ejercicio, unidades, superserie, `Igual a` (`x N vez/veces`, `N%`, `EXCEPTO`) y herencia de campos |
 
-La sección marcada como **PROVISORIO** al final de `plan.cup` (ejercicios, superserie e `Igual a`) es un esqueleto mínimo para poder probar las rutinas; se reemplaza con la versión definitiva.
-
-Para no pisarse en Git: cada persona edita solo su sección de `plan.flex` y `plan.cup`, hace commits chicos, hace `pull` antes de empezar y avisa antes de agregar un token o no terminal en la parte de otra.
-
 ## Pruebas
 
 ```
@@ -125,13 +121,3 @@ Para no pisarse en Git: cada persona edita solo su sección de `plan.flex` y `pl
 ```
 
 En `prueba_errores.txt` se puede ver que, después del error sintáctico de la rutina 3, el análisis sigue con la rutina siguiente.
-
-### Archivos a ignorar en Git
-
-```
-*.class
-*~
-src/Lexer.java
-src/parser.java
-src/sym.java
-```
