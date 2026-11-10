@@ -70,11 +70,11 @@ FRACCION = {ENTERO}"/"{ENTERO}
 "descanso"                      { return symbol(sym.DESCANSO); }
 "reps"                          { return symbol(sym.REPS); }
 "vuelta" | "vueltas"            { return symbol(sym.VUELTA); }
-{ENTERO}"x"{ENTERO}             { return symbol(sym.SERIES_REPS); }
-{ENTERO}"xMAX"                  { return symbol(sym.SERIES_MAX); }
-{ENTERO}"x"{ENTERO}(h|m|s)      { return symbol(sym.SERIES_TIEMPO); }
-{DECIMAL}(kg|lb|"%1RM")         { return symbol(sym.CARGA); }
-{DECIMAL}"km/h"                 { return symbol(sym.VELOCIDAD); }
+{ENTERO}"x"{ENTERO}             { return symbol(sym.SERIES_REPS, yytext()); }
+{ENTERO}"xMAX"                  { return symbol(sym.SERIES_MAX, yytext()); }
+{ENTERO}"x"{ENTERO}(h|m|s)      { return symbol(sym.SERIES_TIEMPO, yytext()); }
+{DECIMAL}(kg|lb|"%1RM")         { return symbol(sym.CARGA, yytext()); }
+{DECIMAL}"km/h"                 { return symbol(sym.VELOCIDAD, yytext()); }
 "@"                             { return symbol(sym.ARROBA); }
 
 /* ---------- Igual a (Persona 3, provisorio) ---------- */

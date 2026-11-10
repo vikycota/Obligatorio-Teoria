@@ -61,6 +61,76 @@ action code {:
 
   Set<String> nombresRutinas = new HashSet<>();
 
+
+/* ===================== ESPECIFICACIONES DE EJERCICIO ===================== */
+
+/* BigInteger evita desbordamientos en tokens compuestos. */
+java.math.BigInteger entero(String valor) {
+    return new java.math.BigInteger(valor);
+}
+
+void positivo(String valor, int linea, String descripcion) {
+    if (entero(valor).signum() <= 0)
+        error(linea, descripcion + " debe ser mayor que cero (se encontró " + valor + ")");
+}
+
+void validarSeriesReps(String valor, int linea) {
+    String[] partes = valor.split("x");
+    positivo(partes[0], linea, "la cantidad de series");
+    positivo(partes[1], linea, "la cantidad de repeticiones");
+}
+
+void validarSeriesMax(String valor, int linea) {
+    positivo(valor.substring(0, valor.length() - 4), linea, "la cantidad de series");
+}
+
+void validarTiempoEjercicio(String valor, int linea) {
+    String numero = valor.substring(0, valor.length() - 1);
+    positivo(numero, linea, "el tiempo");
+}
+
+void validarSeriesTiempo(String valor, int linea) {
+    int x = valor.indexOf('x');
+    positivo(valor.substring(0, x), linea, "la cantidad de series");
+    validarTiempoEjercicio(valor.substring(x + 1), linea);
+}
+
+void validarCarga(String carga, int linea) {
+    String cantidad;
+
+    if (carga.endsWith("%1RM")) {
+        cantidad = carga.substring(0, carga.length() - 4);
+        java.math.BigDecimal porcentaje = new java.math.BigDecimal(cantidad);
+
+        if (porcentaje.signum() <= 0 ||
+            porcentaje.compareTo(new java.math.BigDecimal("100")) > 0)
+            error(linea, "la carga porcentual '" + carga +
+                  "' debe estar entre 0 y 100 (excluyendo 0)");
+    } else {
+        cantidad = carga.substring(0, carga.length() - 2);
+
+        if (new java.math.BigDecimal(cantidad).signum() <= 0)
+            error(linea, "la carga '" + carga + "' debe ser positiva");
+    }
+}
+
+void validarVelocidad(String velocidad, int linea) {
+    String cantidad = velocidad.substring(0, velocidad.length() - 4);
+
+    if (new java.math.BigDecimal(cantidad).signum() <= 0)
+        error(linea, "la velocidad '" + velocidad + "' debe ser positiva");
+}
+
+void validarVueltas(Integer vueltas, int linea) {
+    if (vueltas < 2)
+        error(linea, "la superserie requiere al menos 2 vueltas");
+}
+
+void validarSuperserie(int ejercicios, int linea) {
+    if (ejercicios < 2)
+        error(linea, "la superserie requiere al menos 2 ejercicios");
+}
+
   /* ===================== ENCABEZADO ===================== */
 
   final Set<String> NIVELES = Set.of("principiante", "intermedio", "avanzado");
@@ -231,8 +301,8 @@ terminal String  PALABRA, CADENA, FECHA, FRACCION, ESTRELLAS, TIEMPO;
 terminal Integer ENTERO;
 
 /* Persona 2 y 3 (provisorios) */
-terminal SUPERSERIE, FIN, DESCANSO, REPS, VUELTA, SERIES_REPS, SERIES_MAX,
-         SERIES_TIEMPO, CARGA, VELOCIDAD, ARROBA;
+terminal SUPERSERIE, FIN, DESCANSO, REPS, VUELTA, ARROBA;
+terminal String SERIES_REPS, SERIES_MAX, SERIES_TIEMPO, CARGA, VELOCIDAD;
 terminal IGUAL_A, EXCEPTO, POR, VEZ, PORCENTAJE;
 
 /* ---------------------------------------------------------------------
@@ -251,7 +321,8 @@ non terminal String       valor_extra;
 non terminal Boolean      cuerpo;
 
 /* Persona 2 y 3 (provisorios) */
-non terminal lista_ej, ejercicio, spec, spec_item, descanso_opt,
+non terminal Integer lista_ej, ejercicio;
+non terminal spec, descanso_opt, carga_opt, velocidad_opt,
              repeticion_opt, excepto_opt;
 
 /* =====================================================================
@@ -363,19 +434,48 @@ cuerpo ::= EJERCICIOS lista_ej                        {: RESULT = false; :}
          | IGUAL_A CADENA repeticion_opt excepto_opt  {: RESULT = true;  :}
          ;
 
-lista_ej ::= lista_ej ejercicio | ejercicio ;
+
+lista_ej ::= lista_ej:n ejercicio:e
+             {: RESULT = n + e; :}
+           | ejercicio:e
+             {: RESULT = e; :}
+           ;
 
 ejercicio ::= nombre DOSPUNTOS spec
-            | nombre SUPERSERIE ENTERO VUELTA lista_ej FIN SUPERSERIE descanso_opt
-            | SUPERSERIE ENTERO VUELTA lista_ej FIN SUPERSERIE descanso_opt
+              {: RESULT = 1; :}
+            | nombre SUPERSERIE:s ENTERO:v VUELTA lista_ej:n FIN SUPERSERIE descanso_opt
+              {: validarVueltas(v, sleft); validarSuperserie(n, sleft); RESULT = 1; :}
+            | SUPERSERIE:s ENTERO:v VUELTA lista_ej:n FIN SUPERSERIE descanso_opt
+              {: validarVueltas(v, sleft); validarSuperserie(n, sleft); RESULT = 1; :}
             ;
 
-spec ::= spec spec_item | spec_item ;
+spec ::= SERIES_REPS:r carga_opt descanso_opt
+         {: validarSeriesReps(r, rleft); :}
+       | SERIES_MAX:r descanso_opt
+         {: validarSeriesMax(r, rleft); :}
+       | SERIES_TIEMPO:t descanso_opt
+         {: validarSeriesTiempo(t, tleft); :}
+       | ENTERO:r REPS carga_opt descanso_opt
+         {: if (r <= 0) error(rleft, "la cantidad de repeticiones debe ser positiva"); :}
+       | TIEMPO:t velocidad_opt
+         {: validarTiempoEjercicio(t, tleft); :}
+       ;
 
-spec_item ::= SERIES_REPS | SERIES_MAX | SERIES_TIEMPO | TIEMPO | CARGA | VELOCIDAD
-            | ENTERO | REPS | ARROBA | COMA | DESCANSO ;
+carga_opt ::= ARROBA CARGA:c
+              {: validarCarga(c, cleft); :}
+            | /* vacío */
+            ;
 
-descanso_opt ::= COMA DESCANSO TIEMPO | /* vacío */ ;
+velocidad_opt ::= ARROBA VELOCIDAD:v
+                  {: validarVelocidad(v, vleft); :}
+                | /* vacío */
+                ;
+
+descanso_opt ::= COMA DESCANSO TIEMPO:t
+                 {: validarTiempoEjercicio(t, tleft); :}
+               | /* vacío */
+               ;
+
 
 repeticion_opt ::= POR ENTERO VEZ | PORCENTAJE | /* vacío */ ;
 
