@@ -12,6 +12,212 @@ import java.nio.charset.StandardCharsets;
    --------------------------------------------------------------------- */
 parser code {:
   public static int errores = 0;
+  private int erroresSemanticos = 0;
+
+  /* ===================== MODELO INTERMEDIO =====================
+     Estas clases solo representan lo que se leyó. La resolución de Igual a,
+     la aplicación de EXCEPTO y la herencia de campos se harán más adelante. */
+
+  public static final class Campo {
+    public final String nombre;
+    public final int linea;
+    public final Object valor;
+
+    public Campo(String nombre, int linea, Object valor) {
+      this.nombre = nombre;
+      this.linea = linea;
+      this.valor = valor;
+    }
+  }
+
+  public enum TipoEspecificacion {
+    SERIES_REPETICIONES, SERIES_MAXIMO, SERIES_TIEMPO, REPETICIONES, TIEMPO
+  }
+
+  public static final class EspecificacionEjercicio {
+    public final TipoEspecificacion tipo;
+    public final String valor;
+    public final String carga;
+    public final String descanso;
+    public final String velocidad;
+
+    public EspecificacionEjercicio(TipoEspecificacion tipo, String valor,
+                                   String carga, String descanso, String velocidad) {
+      this.tipo = tipo;
+      this.valor = valor;
+      this.carga = carga;
+      this.descanso = descanso;
+      this.velocidad = velocidad;
+    }
+
+    public EspecificacionEjercicio(String tipo, String valor,
+                                   String carga, String descanso, String velocidad) {
+      this(TipoEspecificacion.valueOf(tipo), valor, carga, descanso, velocidad);
+    }
+  }
+
+  public interface ElementoEjercicio {
+    String getNombre();
+  }
+
+  public static final class Ejercicio implements ElementoEjercicio {
+    public final String nombre;
+    public final EspecificacionEjercicio especificacion;
+
+    public Ejercicio(String nombre, EspecificacionEjercicio especificacion) {
+      this.nombre = nombre;
+      this.especificacion = especificacion;
+    }
+
+    @Override
+    public String getNombre() { return nombre; }
+  }
+
+  public static final class Superserie implements ElementoEjercicio {
+    public final String nombre; // null cuando no fue nombrada
+    public final int vueltas;
+    public final List<ElementoEjercicio> ejercicios;
+    public final String descanso;
+
+    public Superserie(String nombre, int vueltas,
+                      List<ElementoEjercicio> ejercicios, String descanso) {
+      this.nombre = nombre;
+      this.vueltas = vueltas;
+      this.ejercicios = Collections.unmodifiableList(new ArrayList<>(ejercicios));
+      this.descanso = descanso;
+    }
+
+    @Override
+    public String getNombre() { return nombre; }
+  }
+
+  public static final class ModificadorRepeticion {
+    public final Integer veces;
+    /* Se conserva el token completo (por ejemplo, "200%"). Puede superar int. */
+    public final String porcentaje;
+
+    public ModificadorRepeticion(Integer veces, String porcentaje) {
+      this.veces = veces;
+      this.porcentaje = porcentaje;
+    }
+
+    public static ModificadorRepeticion ninguno() {
+      return new ModificadorRepeticion(null, null);
+    }
+
+    public static ModificadorRepeticion veces(int cantidad) {
+      return new ModificadorRepeticion(cantidad, null);
+    }
+
+    public static ModificadorRepeticion porcentaje(String valor) {
+      return new ModificadorRepeticion(null, valor);
+    }
+
+    public boolean usaVeces() { return veces != null; }
+    public boolean usaPorcentaje() { return porcentaje != null; }
+  }
+
+  public static final class CuerpoRutina {
+    public final List<ElementoEjercicio> ejerciciosPropios;
+    public final String rutinaReferenciada;
+    public final ModificadorRepeticion repeticion;
+    public final List<String> exclusiones;
+
+    public CuerpoRutina(List<ElementoEjercicio> ejercicios, String referencia,
+                        ModificadorRepeticion repeticion, List<String> exclusiones) {
+      this.ejerciciosPropios = Collections.unmodifiableList(new ArrayList<>(ejercicios));
+      this.rutinaReferenciada = referencia;
+      this.repeticion = repeticion;
+      this.exclusiones = Collections.unmodifiableList(new ArrayList<>(exclusiones));
+    }
+
+    public static CuerpoRutina conEjercicios(List<ElementoEjercicio> ejercicios) {
+      return new CuerpoRutina(ejercicios, null, ModificadorRepeticion.ninguno(),
+                              Collections.emptyList());
+    }
+
+    public static CuerpoRutina conReferencia(String referencia,
+                                             ModificadorRepeticion repeticion,
+                                             List<String> exclusiones) {
+      return new CuerpoRutina(Collections.emptyList(), referencia, repeticion, exclusiones);
+    }
+
+    public boolean esReferencia() { return rutinaReferenciada != null; }
+  }
+
+  public static final class Rutina {
+    public final String nombre;
+    public final List<Campo> campos;
+    public final CuerpoRutina cuerpo;
+    public final List<ElementoEjercicio> ejercicios;
+    public final boolean validaSemanticamente;
+    public final int cantidadErroresSemanticos;
+
+    public Rutina(String nombre, List<Campo> campos, CuerpoRutina cuerpo) {
+      this(nombre, campos, cuerpo, true, 0);
+    }
+
+    public Rutina(String nombre, List<Campo> campos, CuerpoRutina cuerpo,
+                  boolean validaSemanticamente, int cantidadErroresSemanticos) {
+      this.nombre = nombre;
+      this.campos = Collections.unmodifiableList(new ArrayList<>(campos));
+      this.cuerpo = cuerpo;
+      this.ejercicios = cuerpo.ejerciciosPropios;
+      this.validaSemanticamente = validaSemanticamente;
+      this.cantidadErroresSemanticos = cantidadErroresSemanticos;
+    }
+
+    public List<ElementoEjercicio> getEjercicios() {
+      return ejercicios;
+    }
+  }
+
+  /* Las claves son canónicas: sin tildes, en minúsculas y sin espacios externos.
+     Rutina.nombre siempre conserva el texto original de la declaración. */
+  private final LinkedHashMap<String, Rutina> rutinasDeclaradas = new LinkedHashMap<>();
+  /* Incluye también declaraciones duplicadas o semánticamente inválidas. */
+  private final List<Rutina> rutinasProcesadas = new ArrayList<>();
+
+  public static String claveRutina(String nombre) {
+    return java.text.Normalizer.normalize(nombre, java.text.Normalizer.Form.NFD)
+        .replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT).trim();
+  }
+
+  /* Las claves expuestas por este mapa siguen el criterio canónico documentado. */
+  public Map<String, Rutina> getRutinasDeclaradas() {
+    return Collections.unmodifiableMap(rutinasDeclaradas);
+  }
+
+  public List<Rutina> getRutinasProcesadas() {
+    return Collections.unmodifiableList(rutinasProcesadas);
+  }
+
+  public Optional<Rutina> buscarRutina(String nombre) {
+    return Optional.ofNullable(rutinasDeclaradas.get(claveRutina(nombre)));
+  }
+
+  /* Punto de entrada seguro para la futura resolución de Igual a. */
+  public Optional<Rutina> buscarRutinaValida(String nombre) {
+    return buscarRutina(nombre).filter(r -> r.validaSemanticamente);
+  }
+
+  boolean rutinaYaDeclarada(String nombre) {
+    return rutinasDeclaradas.containsKey(claveRutina(nombre));
+  }
+
+  void registrarRutina(Rutina rutina, boolean nombreNuevo) {
+    rutinasProcesadas.add(rutina);
+    if (nombreNuevo)
+      rutinasDeclaradas.put(claveRutina(rutina.nombre), rutina);
+  }
+
+  void registrarErrorSemantico() {
+    erroresSemanticos++;
+  }
+
+  int getErroresSemanticos() {
+    return erroresSemanticos;
+  }
 
   /* Formato único para todos los errores: [Línea N] Error <tipo>: <mensaje> */
   public static void reportar(int linea, String tipo, String msg) {
@@ -44,23 +250,16 @@ parser code {:
    Código de las acciones: una función de validación por cada campo
    --------------------------------------------------------------------- */
 action code {:
-
-  /* Un campo leído: nombre, línea donde está y su valor */
-  class Campo {
-    String nombre; int linea; Object valor;
-    Campo(String n, int l, Object v) { nombre = n; linea = l; valor = v; }
+  void error(int linea, String msg) {
+    parser.registrarErrorSemantico();
+    parser.reportar(linea, "semántico", msg);
   }
-
-  void error(int linea, String msg) { parser.reportar(linea, "semántico", msg); }
 
   /* Quita tildes y pasa a minúsculas: "Miércoles" -> "miercoles" */
   String normalizar(String s) {
     return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
            .replaceAll("\\p{M}", "").toLowerCase().trim();
   }
-
-  Set<String> nombresRutinas = new HashSet<>();
-
 
 /* ===================== ESPECIFICACIONES DE EJERCICIO ===================== */
 
@@ -186,7 +385,7 @@ void validarSuperserie(int ejercicios, int linea) {
         error(linea, campo + ": '" + x + "' está repetido");
   }
 
-  void validarEncabezado(List<Campo> campos, int linea) {
+  void validarEncabezado(List<parser.Campo> campos, int linea) {
     Set<String> vistos = validarDuplicados(campos);
     for (String obligatorio : List.of("Nivel", "Objetivos", "Semanas", "Profesor", "Fecha"))
       if (!vistos.contains(obligatorio))
@@ -260,9 +459,9 @@ void validarSuperserie(int ejercicios, int linea) {
   }
 
   /* Devuelve los nombres de campos vistos y avisa los repetidos */
-  Set<String> validarDuplicados(List<Campo> campos) {
+  Set<String> validarDuplicados(List<parser.Campo> campos) {
     Set<String> vistos = new HashSet<>();
-    for (Campo c : campos)
+    for (parser.Campo c : campos)
       if (!vistos.add(c.nombre))
         error(c.linea, "el campo " + c.nombre + " aparece más de una vez");
     return vistos;
@@ -270,10 +469,11 @@ void validarSuperserie(int ejercicios, int linea) {
 
   /* Con EJERCICIOS son obligatorios Día, Intensidad, Duración y Músculos.
      Con Igual a solo Día: lo demás se hereda de la rutina referenciada. */
-  void validarRutina(String nombre, List<Campo> campos, boolean esIgualA, int linea) {
+  boolean validarRutina(String nombre, List<parser.Campo> campos, boolean esIgualA, int linea) {
+    boolean nombreNuevo = true;
     if (nombre.trim().isEmpty()) error(linea, "la rutina no tiene nombre");
-    else if (!nombresRutinas.add(normalizar(nombre)))
-      error(linea, "ya existe una rutina llamada '" + nombre + "'");
+    else if (parser.rutinaYaDeclarada(nombre))
+      { error(linea, "ya existe una rutina llamada '" + nombre + "'"); nombreNuevo = false; }
 
     Set<String> vistos = validarDuplicados(campos);
     List<String> obligatorios = esIgualA
@@ -282,10 +482,11 @@ void validarSuperserie(int ejercicios, int linea) {
     for (String o : obligatorios)
       if (!vistos.contains(o))
         error(linea, "a la rutina '" + nombre + "' le falta el campo " + o);
+    return nombreNuevo && !nombre.trim().isEmpty();
   }
 
-  List<Campo> unir(List<Campo> a, List<Campo> b) {
-    List<Campo> r = new ArrayList<>(a); r.addAll(b); return r;
+  List<parser.Campo> unir(List<parser.Campo> a, List<parser.Campo> b) {
+    List<parser.Campo> r = new ArrayList<>(a); r.addAll(b); return r;
   }
 :};
 
@@ -303,34 +504,41 @@ terminal Integer ENTERO;
 /* Persona 2 y 3 (provisorios) */
 terminal SUPERSERIE, FIN, DESCANSO, REPS, VUELTA, ARROBA;
 terminal String SERIES_REPS, SERIES_MAX, SERIES_TIEMPO, CARGA, VELOCIDAD;
-terminal IGUAL_A, EXCEPTO, POR, VEZ, PORCENTAJE;
+terminal IGUAL_A, EXCEPTO, POR, VEZ;
+terminal String PORCENTAJE;
 
 /* ---------------------------------------------------------------------
    No terminales
    --------------------------------------------------------------------- */
-non terminal plan, rutina, encabezado;
-non terminal Integer      rutinas;
-non terminal List<Campo>  campos_enc, campos_rut;
-non terminal Campo        campo_enc, campo_rut;
+non terminal List<parser.Rutina> plan, rutinas;
+non terminal parser.Rutina rutina;
+non terminal Integer inicio_rutina;
+non terminal encabezado;
+non terminal List<parser.Campo>  campos_enc, campos_rut;
+non terminal parser.Campo        campo_enc, campo_rut;
 non terminal String       nombre;
 non terminal List<String> lista, items;
 non terminal Integer      intensidad;
 non terminal List<String[]> pares;
 non terminal String[]     par;
 non terminal String       valor_extra;
-non terminal Boolean      cuerpo;
+non terminal parser.CuerpoRutina cuerpo;
 
 /* Persona 2 y 3 (provisorios) */
-non terminal Integer lista_ej, ejercicio;
-non terminal spec, descanso_opt, carga_opt, velocidad_opt,
-             repeticion_opt, excepto_opt;
+non terminal List<parser.ElementoEjercicio> lista_ej;
+non terminal parser.ElementoEjercicio ejercicio;
+non terminal parser.EspecificacionEjercicio spec;
+non terminal String descanso_opt, carga_opt, velocidad_opt;
+non terminal parser.ModificadorRepeticion repeticion_opt;
+non terminal List<String> excepto_opt;
 
 /* =====================================================================
    GRAMÁTICA
    ===================================================================== */
 
-plan ::= encabezado rutinas:n
-         {: if (n == 0) error(nleft, "el plan no tiene ninguna rutina"); :}
+plan ::= encabezado rutinas:r
+         {: if (r.isEmpty()) error(rleft, "el plan no tiene ninguna rutina");
+            RESULT = r; :}
        ;
 
 /* ---------- Encabezado (los campos pueden venir en cualquier orden) ---------- */
@@ -346,52 +554,65 @@ campos_enc ::= campos_enc:l campo_enc:c  {: l.add(c); RESULT = l; :}
              ;
 
 campo_enc ::= NIVEL:k PALABRA:n
-              {: validarNivel(n, kleft); RESULT = new Campo("Nivel", kleft, n); :}
+              {: validarNivel(n, kleft); RESULT = new parser.Campo("Nivel", kleft, n); :}
             | OBJETIVOS:k lista:l
-              {: validarLista("Objetivos", l, kleft); RESULT = new Campo("Objetivos", kleft, l); :}
+              {: validarLista("Objetivos", l, kleft); RESULT = new parser.Campo("Objetivos", kleft, l); :}
             | SEMANAS:k ENTERO:s
-              {: validarSemanas(s, kleft); RESULT = new Campo("Semanas", kleft, s); :}
+              {: validarSemanas(s, kleft); RESULT = new parser.Campo("Semanas", kleft, s); :}
             | PROFESOR:k CADENA:p
-              {: validarProfesor(p, kleft); RESULT = new Campo("Profesor", kleft, p); :}
+              {: validarProfesor(p, kleft); RESULT = new parser.Campo("Profesor", kleft, p); :}
             | FECHA_KW:k FECHA:f
-              {: validarFecha(f, kleft); RESULT = new Campo("Fecha", kleft, f); :}
+              {: validarFecha(f, kleft); RESULT = new parser.Campo("Fecha", kleft, f); :}
             ;
 
 /* ---------- Rutinas ---------- */
 
-rutinas ::= rutinas:n rutina  {: RESULT = n + 1; :}
-          | /* vacío */          {: RESULT = 0; :}
+rutinas ::= rutinas:l rutina:r
+            {: if (r != null) l.add(r); RESULT = l; :}
+          | /* vacío */
+            {: RESULT = new ArrayList<>(); :}
           ;
 
 /* Campos antes y después del cuerpo, en cualquier orden.
    Si hay un error adentro, se descarta hasta la próxima RUTINA. */
-rutina ::= RUTINA:r CADENA:nom campos_rut:a cuerpo:igual campos_rut:b
-           {: validarRutina(nom, unir(a, b), igual, rleft); :}
+rutina ::= RUTINA:r inicio_rutina:i CADENA:nom campos_rut:a cuerpo:c campos_rut:b
+           {: List<parser.Campo> campos = unir(a, b);
+              boolean nombreNuevo = validarRutina(nom, campos, c.esReferencia(), rleft);
+              int cantidadErrores = parser.getErroresSemanticos() - i;
+              parser.Rutina nueva = new parser.Rutina(
+                  nom, campos, c, cantidadErrores == 0, cantidadErrores);
+              parser.registrarRutina(nueva, nombreNuevo);
+              RESULT = nueva; :}
          | RUTINA error
+           {: RESULT = null; :}
          ;
+
+/* Marca cuántos errores semánticos había al comenzar la declaración. */
+inicio_rutina ::= /* vacío */ {: RESULT = parser.getErroresSemanticos(); :}
+               ;
 
 campos_rut ::= campos_rut:l campo_rut:c  {: l.add(c); RESULT = l; :}
              | /* vacío */                {: RESULT = new ArrayList<>(); :}
              ;
 
 campo_rut ::= DIA:k PALABRA:d
-              {: validarDia(d, kleft); RESULT = new Campo("Día", kleft, d); :}
+              {: validarDia(d, kleft); RESULT = new parser.Campo("Día", kleft, d); :}
             | CALENTAMIENTO:k CADENA:c
-              {: validarCalentamiento(c, kleft); RESULT = new Campo("Calentamiento", kleft, c); :}
+              {: validarCalentamiento(c, kleft); RESULT = new parser.Campo("Calentamiento", kleft, c); :}
             | INTENSIDAD:k intensidad:i
-              {: RESULT = new Campo("Intensidad", kleft, i); :}
+              {: RESULT = new parser.Campo("Intensidad", kleft, i); :}
             | DURACION:k TIEMPO:t
-              {: RESULT = new Campo("Duración", kleft, validarDuracion(t, kleft)); :}
+              {: RESULT = new parser.Campo("Duración", kleft, validarDuracion(t, kleft)); :}
             | MUSCULOS:k lista:l
-              {: validarLista("Músculos", l, kleft); RESULT = new Campo("Músculos", kleft, l); :}
+              {: validarLista("Músculos", l, kleft); RESULT = new parser.Campo("Músculos", kleft, l); :}
             | EQUIPAMIENTO:k lista:l
-              {: validarLista("Equipamiento", l, kleft); RESULT = new Campo("Equipamiento", kleft, l); :}
+              {: validarLista("Equipamiento", l, kleft); RESULT = new parser.Campo("Equipamiento", kleft, l); :}
             | VARIANTES:k lista:l
-              {: validarLista("Variantes", l, kleft); RESULT = new Campo("Variantes", kleft, l); :}
+              {: validarLista("Variantes", l, kleft); RESULT = new parser.Campo("Variantes", kleft, l); :}
             | EXTRA:k pares:p
-              {: validarExtra(p, kleft); RESULT = new Campo("Extra", kleft, p); :}
+              {: validarExtra(p, kleft); RESULT = new parser.Campo("Extra", kleft, p); :}
             | OBS:k CADENA:o
-              {: validarObs(o, kleft); RESULT = new Campo("Obs", kleft, o); :}
+              {: validarObs(o, kleft); RESULT = new parser.Campo("Obs", kleft, o); :}
             ;
 
 intensidad ::= FRACCION:f   {: RESULT = intensidadFraccion(f, fleft); :}
@@ -429,54 +650,80 @@ valor_extra ::= nombre:n  {: RESULT = n; :}
    PROVISORIO - tenemos que reemplazar
    ===================================================================== */
 
-/* devuelve true si la rutina usa Igual a */
-cuerpo ::= EJERCICIOS lista_ej                        {: RESULT = false; :}
-         | IGUAL_A CADENA repeticion_opt excepto_opt  {: RESULT = true;  :}
+cuerpo ::= EJERCICIOS lista_ej:l
+           {: RESULT = new parser.CuerpoRutina(
+                l, null, new parser.ModificadorRepeticion(null, null),
+                Collections.emptyList()); :}
+         | IGUAL_A CADENA:r repeticion_opt:m excepto_opt:e
+           {: RESULT = new parser.CuerpoRutina(Collections.emptyList(), r, m, e); :}
          ;
 
 
-lista_ej ::= lista_ej:n ejercicio:e
-             {: RESULT = n + e; :}
+lista_ej ::= lista_ej:l ejercicio:e
+             {: l.add(e); RESULT = l; :}
            | ejercicio:e
-             {: RESULT = e; :}
+             {: RESULT = new ArrayList<>(); RESULT.add(e); :}
            ;
 
-ejercicio ::= nombre DOSPUNTOS spec
-              {: RESULT = 1; :}
-            | nombre SUPERSERIE:s ENTERO:v VUELTA lista_ej:n FIN SUPERSERIE descanso_opt
-              {: validarVueltas(v, sleft); validarSuperserie(n, sleft); RESULT = 1; :}
-            | SUPERSERIE:s ENTERO:v VUELTA lista_ej:n FIN SUPERSERIE descanso_opt
-              {: validarVueltas(v, sleft); validarSuperserie(n, sleft); RESULT = 1; :}
+ejercicio ::= nombre:n DOSPUNTOS spec:s
+              {: RESULT = new parser.Ejercicio(n, s); :}
+            | nombre:n SUPERSERIE:k ENTERO:v VUELTA lista_ej:l FIN SUPERSERIE descanso_opt:d
+              {: validarVueltas(v, kleft); validarSuperserie(l.size(), kleft);
+                 RESULT = new parser.Superserie(n, v, l, d); :}
+            | SUPERSERIE:k ENTERO:v VUELTA lista_ej:l FIN SUPERSERIE descanso_opt:d
+              {: validarVueltas(v, kleft); validarSuperserie(l.size(), kleft);
+                 RESULT = new parser.Superserie(null, v, l, d); :}
             ;
 
-spec ::= SERIES_REPS:r carga_opt descanso_opt
-         {: validarSeriesReps(r, rleft); :}
-       | SERIES_MAX:r descanso_opt
-         {: validarSeriesMax(r, rleft); :}
-       | SERIES_TIEMPO:t descanso_opt
-         {: validarSeriesTiempo(t, tleft); :}
-       | ENTERO:r REPS carga_opt descanso_opt
-         {: if (r <= 0) error(rleft, "la cantidad de repeticiones debe ser positiva"); :}
-       | TIEMPO:t velocidad_opt
-         {: validarTiempoEjercicio(t, tleft); :}
+spec ::= SERIES_REPS:r carga_opt:c descanso_opt:d
+         {: validarSeriesReps(r, rleft);
+            RESULT = new parser.EspecificacionEjercicio(
+                "SERIES_REPETICIONES", r, c, d, null); :}
+       | SERIES_MAX:r descanso_opt:d
+         {: validarSeriesMax(r, rleft);
+            RESULT = new parser.EspecificacionEjercicio(
+                "SERIES_MAXIMO", r, null, d, null); :}
+       | SERIES_TIEMPO:t descanso_opt:d
+         {: validarSeriesTiempo(t, tleft);
+            RESULT = new parser.EspecificacionEjercicio(
+                "SERIES_TIEMPO", t, null, d, null); :}
+       | ENTERO:r REPS carga_opt:c descanso_opt:d
+         {: if (r <= 0) error(rleft, "la cantidad de repeticiones debe ser positiva");
+            RESULT = new parser.EspecificacionEjercicio(
+                "REPETICIONES", r.toString(), c, d, null); :}
+       | TIEMPO:t velocidad_opt:v
+         {: validarTiempoEjercicio(t, tleft);
+            RESULT = new parser.EspecificacionEjercicio(
+                "TIEMPO", t, null, null, v); :}
        ;
 
 carga_opt ::= ARROBA CARGA:c
-              {: validarCarga(c, cleft); :}
+              {: validarCarga(c, cleft); RESULT = c; :}
             | /* vacío */
+              {: RESULT = null; :}
             ;
 
 velocidad_opt ::= ARROBA VELOCIDAD:v
-                  {: validarVelocidad(v, vleft); :}
+                  {: validarVelocidad(v, vleft); RESULT = v; :}
                 | /* vacío */
+                  {: RESULT = null; :}
                 ;
 
 descanso_opt ::= COMA DESCANSO TIEMPO:t
-                 {: validarTiempoEjercicio(t, tleft); :}
+                 {: validarTiempoEjercicio(t, tleft); RESULT = t; :}
                | /* vacío */
+                 {: RESULT = null; :}
                ;
 
 
-repeticion_opt ::= POR ENTERO VEZ | PORCENTAJE | /* vacío */ ;
+repeticion_opt ::= POR ENTERO:n VEZ
+                   {: RESULT = new parser.ModificadorRepeticion(n, null); :}
+                 | PORCENTAJE:p
+                   {: RESULT = new parser.ModificadorRepeticion(null, p); :}
+                 | /* vacío */
+                   {: RESULT = new parser.ModificadorRepeticion(null, null); :}
+                 ;
 
-excepto_opt ::= EXCEPTO lista | /* vacío */ ;
+excepto_opt ::= EXCEPTO lista:l {: RESULT = l; :}
+              | /* vacío */     {: RESULT = new ArrayList<>(); :}
+              ;
