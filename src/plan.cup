@@ -15,8 +15,9 @@ parser code {:
   private int erroresSemanticos = 0;
 
   /* ===================== MODELO INTERMEDIO =====================
-     Estas clases solo representan lo que se leyó. La resolución de Igual a,
-     la aplicación de EXCEPTO y la herencia de campos se harán más adelante. */
+     El cuerpo conserva exactamente lo declarado. Por separado, Rutina expone
+     los ejercicios resueltos de Igual a. EXCEPTO, la repetición y la herencia
+     de campos todavía no se aplican. */
 
   public static final class Campo {
     public final String nombre;
@@ -120,13 +121,21 @@ parser code {:
   public static final class CuerpoRutina {
     public final List<ElementoEjercicio> ejerciciosPropios;
     public final String rutinaReferenciada;
+    public final int lineaReferencia;
     public final ModificadorRepeticion repeticion;
     public final List<String> exclusiones;
 
     public CuerpoRutina(List<ElementoEjercicio> ejercicios, String referencia,
                         ModificadorRepeticion repeticion, List<String> exclusiones) {
+      this(ejercicios, referencia, -1, repeticion, exclusiones);
+    }
+
+    public CuerpoRutina(List<ElementoEjercicio> ejercicios, String referencia,
+                        int lineaReferencia, ModificadorRepeticion repeticion,
+                        List<String> exclusiones) {
       this.ejerciciosPropios = Collections.unmodifiableList(new ArrayList<>(ejercicios));
       this.rutinaReferenciada = referencia;
+      this.lineaReferencia = lineaReferencia;
       this.repeticion = repeticion;
       this.exclusiones = Collections.unmodifiableList(new ArrayList<>(exclusiones));
     }
@@ -140,6 +149,13 @@ parser code {:
                                              ModificadorRepeticion repeticion,
                                              List<String> exclusiones) {
       return new CuerpoRutina(Collections.emptyList(), referencia, repeticion, exclusiones);
+    }
+
+    public static CuerpoRutina conReferencia(String referencia, int lineaReferencia,
+                                             ModificadorRepeticion repeticion,
+                                             List<String> exclusiones) {
+      return new CuerpoRutina(Collections.emptyList(), referencia, lineaReferencia,
+                              repeticion, exclusiones);
     }
 
     public boolean esReferencia() { return rutinaReferenciada != null; }
@@ -159,10 +175,17 @@ parser code {:
 
     public Rutina(String nombre, List<Campo> campos, CuerpoRutina cuerpo,
                   boolean validaSemanticamente, int cantidadErroresSemanticos) {
+      this(nombre, campos, cuerpo, cuerpo.ejerciciosPropios,
+           validaSemanticamente, cantidadErroresSemanticos);
+    }
+
+    public Rutina(String nombre, List<Campo> campos, CuerpoRutina cuerpo,
+                  List<ElementoEjercicio> ejercicios,
+                  boolean validaSemanticamente, int cantidadErroresSemanticos) {
       this.nombre = nombre;
       this.campos = Collections.unmodifiableList(new ArrayList<>(campos));
       this.cuerpo = cuerpo;
-      this.ejercicios = cuerpo.ejerciciosPropios;
+      this.ejercicios = Collections.unmodifiableList(new ArrayList<>(ejercicios));
       this.validaSemanticamente = validaSemanticamente;
       this.cantidadErroresSemanticos = cantidadErroresSemanticos;
     }
@@ -196,7 +219,7 @@ parser code {:
     return Optional.ofNullable(rutinasDeclaradas.get(claveRutina(nombre)));
   }
 
-  /* Punto de entrada seguro para la futura resolución de Igual a. */
+  /* Punto de entrada seguro para la resolución de Igual a. */
   public Optional<Rutina> buscarRutinaValida(String nombre) {
     return buscarRutina(nombre).filter(r -> r.validaSemanticamente);
   }
@@ -485,6 +508,38 @@ void validarSuperserie(int ejercicios, int linea) {
     return nombreNuevo && !nombre.trim().isEmpty();
   }
 
+  /* Resuelve solamente los ejercicios. El cuerpo declarado queda intacto para
+     aplicar la repetición, EXCEPTO y la herencia de campos en etapas futuras. */
+  List<parser.ElementoEjercicio> resolverEjercicios(
+      String nombreRutina, parser.CuerpoRutina cuerpo) {
+    if (!cuerpo.esReferencia())
+      return cuerpo.ejerciciosPropios;
+
+    String referencia = cuerpo.rutinaReferenciada;
+    int linea = cuerpo.lineaReferencia;
+    if (parser.claveRutina(nombreRutina).equals(parser.claveRutina(referencia))) {
+      error(linea, "la rutina '" + nombreRutina + "' no puede referenciarse a sí misma");
+      return Collections.emptyList();
+    }
+
+    Optional<parser.Rutina> encontrada = parser.buscarRutina(referencia);
+    if (encontrada.isEmpty()) {
+      error(linea, "la rutina referenciada '" + referencia
+          + "' no existe o todavía no fue declarada");
+      return Collections.emptyList();
+    }
+
+    Optional<parser.Rutina> valida = parser.buscarRutinaValida(referencia);
+    if (valida.isEmpty()) {
+      error(linea, "la rutina referenciada '" + referencia
+          + "' es semánticamente inválida y no puede reutilizarse");
+      return Collections.emptyList();
+    }
+
+    /* getEjercicios() ya puede ser el resultado de otra referencia (A -> B -> C). */
+    return valida.get().getEjercicios();
+  }
+
   List<parser.Campo> unir(List<parser.Campo> a, List<parser.Campo> b) {
     List<parser.Campo> r = new ArrayList<>(a); r.addAll(b); return r;
   }
@@ -578,9 +633,10 @@ rutinas ::= rutinas:l rutina:r
 rutina ::= RUTINA:r inicio_rutina:i CADENA:nom campos_rut:a cuerpo:c campos_rut:b
            {: List<parser.Campo> campos = unir(a, b);
               boolean nombreNuevo = validarRutina(nom, campos, c.esReferencia(), rleft);
+              List<parser.ElementoEjercicio> ejercicios = resolverEjercicios(nom, c);
               int cantidadErrores = parser.getErroresSemanticos() - i;
               parser.Rutina nueva = new parser.Rutina(
-                  nom, campos, c, cantidadErrores == 0, cantidadErrores);
+                  nom, campos, c, ejercicios, cantidadErrores == 0, cantidadErrores);
               parser.registrarRutina(nueva, nombreNuevo);
               RESULT = nueva; :}
          | RUTINA error
@@ -654,8 +710,9 @@ cuerpo ::= EJERCICIOS lista_ej:l
            {: RESULT = new parser.CuerpoRutina(
                 l, null, new parser.ModificadorRepeticion(null, null),
                 Collections.emptyList()); :}
-         | IGUAL_A CADENA:r repeticion_opt:m excepto_opt:e
-           {: RESULT = new parser.CuerpoRutina(Collections.emptyList(), r, m, e); :}
+         | IGUAL_A:k CADENA:r repeticion_opt:m excepto_opt:e
+           {: RESULT = new parser.CuerpoRutina(
+                Collections.emptyList(), r, kleft, m, e); :}
          ;
 
 
