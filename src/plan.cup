@@ -15,10 +15,10 @@ parser code {:
   private int erroresSemanticos = 0;
 
   /* ===================== MODELO INTERMEDIO =====================
-     El cuerpo conserva exactamente lo declarado. Por separado, Rutina expone
-     los ejercicios resueltos de Igual a, con EXCEPTO aplicado en cada capa, y
-     las repeticiones sin expandir la lista. La herencia de campos todavía no
-     se aplica. */
+     El cuerpo y los campos originales conservan exactamente lo declarado.
+     Por separado, Rutina expone los campos efectivos y los ejercicios
+     resueltos de Igual a, con EXCEPTO aplicado en cada capa, sin expandir las
+     repeticiones. */
 
   public static final class Campo {
     public final String nombre;
@@ -29,6 +29,25 @@ parser code {:
       this.nombre = nombre;
       this.linea = linea;
       this.valor = valor;
+    }
+
+    /* Los valores de los campos pueden contener listas y, en Extra, arreglos.
+       Cada rutina recibe copias propias para que la herencia no comparta
+       estructuras mutables con su origen. */
+    private static Object copiarValor(Object valor) {
+      if (valor instanceof List<?>) {
+        List<Object> copia = new ArrayList<>();
+        for (Object elemento : (List<?>) valor)
+          copia.add(copiarValor(elemento));
+        return copia;
+      }
+      if (valor instanceof String[])
+        return ((String[]) valor).clone();
+      return valor;
+    }
+
+    public Campo copiar() {
+      return new Campo(nombre, linea, copiarValor(valor));
     }
   }
 
@@ -236,7 +255,10 @@ parser code {:
 
   public static final class Rutina {
     public final String nombre;
+    /* Alias histórico: campos siempre representa la declaración original. */
     public final List<Campo> campos;
+    public final List<Campo> camposOriginales;
+    public final List<Campo> camposEfectivos;
     public final CuerpoRutina cuerpo;
     public final EjecucionRutina ejecucion;
     /* Alias conservado para los consumidores existentes del modelo. */
@@ -259,8 +281,18 @@ parser code {:
     public Rutina(String nombre, List<Campo> campos, CuerpoRutina cuerpo,
                   EjecucionRutina ejecucion,
                   boolean validaSemanticamente, int cantidadErroresSemanticos) {
+      this(nombre, campos, copiarCampos(campos), cuerpo, ejecucion,
+           validaSemanticamente, cantidadErroresSemanticos);
+    }
+
+    public Rutina(String nombre, List<Campo> camposOriginales,
+                  List<Campo> camposEfectivos, CuerpoRutina cuerpo,
+                  EjecucionRutina ejecucion,
+                  boolean validaSemanticamente, int cantidadErroresSemanticos) {
       this.nombre = nombre;
-      this.campos = Collections.unmodifiableList(new ArrayList<>(campos));
+      this.camposOriginales = copiarCampos(camposOriginales);
+      this.campos = this.camposOriginales;
+      this.camposEfectivos = copiarCampos(camposEfectivos);
       this.cuerpo = cuerpo;
       this.ejecucion = ejecucion;
       this.ejercicios = ejecucion.getEjerciciosVisibles();
@@ -268,8 +300,23 @@ parser code {:
       this.cantidadErroresSemanticos = cantidadErroresSemanticos;
     }
 
+    private static List<Campo> copiarCampos(List<Campo> campos) {
+      List<Campo> copia = new ArrayList<>();
+      for (Campo campo : campos)
+        copia.add(campo.copiar());
+      return Collections.unmodifiableList(copia);
+    }
+
     public List<ElementoEjercicio> getEjercicios() {
       return ejercicios;
+    }
+
+    public List<Campo> getCamposOriginales() {
+      return camposOriginales;
+    }
+
+    public List<Campo> getCamposEfectivos() {
+      return camposEfectivos;
     }
   }
 
@@ -591,22 +638,60 @@ void validarSuperserie(int ejercicios, int linea) {
     return vistos;
   }
 
-  /* Con EJERCICIOS son obligatorios Día, Intensidad, Duración y Músculos.
-     Con Igual a solo Día: lo demás se hereda de la rutina referenciada. */
-  boolean validarRutina(String nombre, List<parser.Campo> campos, boolean esIgualA, int linea) {
+  boolean validarDeclaracionRutina(
+      String nombre, List<parser.Campo> campos, int linea) {
     boolean nombreNuevo = true;
     if (nombre.trim().isEmpty()) error(linea, "la rutina no tiene nombre");
     else if (parser.rutinaYaDeclarada(nombre))
       { error(linea, "ya existe una rutina llamada '" + nombre + "'"); nombreNuevo = false; }
 
-    Set<String> vistos = validarDuplicados(campos);
-    List<String> obligatorios = esIgualA
-        ? List.of("Día")
-        : List.of("Día", "Intensidad", "Duración", "Músculos");
-    for (String o : obligatorios)
-      if (!vistos.contains(o))
-        error(linea, "a la rutina '" + nombre + "' le falta el campo " + o);
+    validarDuplicados(campos);
     return nombreNuevo && !nombre.trim().isEmpty();
+  }
+
+  Set<String> nombresCampos(List<parser.Campo> campos) {
+    Set<String> nombres = new HashSet<>();
+    for (parser.Campo campo : campos)
+      nombres.add(campo.nombre);
+    return nombres;
+  }
+
+  /* Día debe declararse en cada Igual a. Los otros campos obligatorios pueden
+     venir de cualquier nivel de la cadena, pero siempre se comprueban sobre el
+     resultado efectivo. Si el origen es inválido se evita encadenar errores de
+     campos faltantes que son solamente consecuencia de esa referencia. */
+  void validarCamposObligatorios(
+      String nombre, List<parser.Campo> originales,
+      List<parser.Campo> efectivos, boolean esIgualA,
+      boolean sePudoResolverHerencia, int linea) {
+    Set<String> declarados = nombresCampos(originales);
+    boolean faltaDiaDeclarado = esIgualA && !declarados.contains("Día");
+    if (faltaDiaDeclarado)
+      error(linea, "a la rutina '" + nombre + "' le falta el campo Día");
+
+    if (esIgualA && !sePudoResolverHerencia)
+      return;
+
+    Set<String> disponibles = nombresCampos(efectivos);
+    for (String obligatorio : List.of("Día", "Intensidad", "Duración", "Músculos"))
+      if (!disponibles.contains(obligatorio)
+          && !(obligatorio.equals("Día") && faltaDiaDeclarado))
+        error(linea, "a la rutina '" + nombre
+            + "' le falta el campo " + obligatorio);
+  }
+
+  /* Combina una copia de los campos efectivos del origen con copias de los
+     campos declarados. LinkedHashMap conserva un orden estable y put hace que
+     la declaración explícita reemplace al valor heredado del mismo campo. */
+  List<parser.Campo> resolverCampos(
+      List<parser.Campo> declarados, parser.Rutina origen) {
+    LinkedHashMap<String, parser.Campo> resueltos = new LinkedHashMap<>();
+    if (origen != null)
+      for (parser.Campo heredado : origen.getCamposEfectivos())
+        resueltos.put(heredado.nombre, heredado.copiar());
+    for (parser.Campo declarado : declarados)
+      resueltos.put(declarado.nombre, declarado.copiar());
+    return new ArrayList<>(resueltos.values());
   }
 
   /* EXCEPTO se limita a los elementos del nivel superior. Esto permite quitar
@@ -651,37 +736,47 @@ void validarSuperserie(int ejercicios, int linea) {
     return filtrados;
   }
 
-  /* Resuelve los ejercicios y conserva una capa por referencia. Cada capa
-     contiene la secuencia visible luego de sus propias exclusiones; el cuerpo
-     declarado y la ejecución referenciada permanecen intactos. */
-  parser.EjecucionRutina resolverEjecucion(
+  /* Valida la referencia una sola vez. El mismo origen ya validado alimenta la
+     herencia de campos y la resolución de ejercicios. */
+  parser.Rutina resolverOrigenHerencia(
       String nombreRutina, parser.CuerpoRutina cuerpo) {
-    if (!cuerpo.esReferencia())
-      return new parser.EjecucionRutina(cuerpo.ejerciciosPropios,
-          new parser.ModificadorRepeticion(null, null), null);
-
+    if (!cuerpo.esReferencia()) return null;
     String referencia = cuerpo.rutinaReferenciada;
     int linea = cuerpo.lineaReferencia;
     if (parser.claveRutina(nombreRutina).equals(parser.claveRutina(referencia))) {
       error(linea, "la rutina '" + nombreRutina + "' no puede referenciarse a sí misma");
-      return new parser.EjecucionRutina(Collections.emptyList(), cuerpo.repeticion, null);
+      return null;
     }
 
     Optional<parser.Rutina> encontrada = parser.buscarRutina(referencia);
     if (encontrada.isEmpty()) {
       error(linea, "la rutina referenciada '" + referencia
           + "' no existe o todavía no fue declarada");
-      return new parser.EjecucionRutina(Collections.emptyList(), cuerpo.repeticion, null);
+      return null;
     }
 
     Optional<parser.Rutina> valida = parser.buscarRutinaValida(referencia);
     if (valida.isEmpty()) {
       error(linea, "la rutina referenciada '" + referencia
           + "' es semánticamente inválida y no puede reutilizarse");
-      return new parser.EjecucionRutina(Collections.emptyList(), cuerpo.repeticion, null);
+      return null;
     }
 
-    parser.Rutina origen = valida.get();
+    return valida.get();
+  }
+
+  /* Resuelve los ejercicios y conserva una capa por referencia. Cada capa
+     contiene la secuencia visible luego de sus propias exclusiones; el cuerpo
+     declarado y la ejecución referenciada permanecen intactos. */
+  parser.EjecucionRutina resolverEjecucion(
+      parser.CuerpoRutina cuerpo, parser.Rutina origen) {
+    if (!cuerpo.esReferencia())
+      return new parser.EjecucionRutina(cuerpo.ejerciciosPropios,
+          new parser.ModificadorRepeticion(null, null), null);
+    if (origen == null)
+      return new parser.EjecucionRutina(
+          Collections.emptyList(), cuerpo.repeticion, null);
+
     List<parser.ElementoEjercicio> visibles =
         aplicarExclusiones(origen.getEjercicios(), cuerpo);
     return new parser.EjecucionRutina(visibles, cuerpo.repeticion, origen.ejecucion);
@@ -779,11 +874,16 @@ rutinas ::= rutinas:l rutina:r
    Si hay un error adentro, se descarta hasta la próxima RUTINA. */
 rutina ::= RUTINA:r inicio_rutina:i CADENA:nom campos_rut:a cuerpo:c campos_rut:b
            {: List<parser.Campo> campos = unir(a, b);
-              boolean nombreNuevo = validarRutina(nom, campos, c.esReferencia(), rleft);
-              parser.EjecucionRutina ejecucion = resolverEjecucion(nom, c);
+              boolean nombreNuevo = validarDeclaracionRutina(nom, campos, rleft);
+              parser.Rutina origen = resolverOrigenHerencia(nom, c);
+              List<parser.Campo> camposEfectivos = resolverCampos(campos, origen);
+              validarCamposObligatorios(nom, campos, camposEfectivos,
+                  c.esReferencia(), !c.esReferencia() || origen != null, rleft);
+              parser.EjecucionRutina ejecucion = resolverEjecucion(c, origen);
               int cantidadErrores = parser.getErroresSemanticos() - i;
               parser.Rutina nueva = new parser.Rutina(
-                  nom, campos, c, ejecucion, cantidadErrores == 0, cantidadErrores);
+                  nom, campos, camposEfectivos, c, ejecucion,
+                  cantidadErrores == 0, cantidadErrores);
               parser.registrarRutina(nueva, nombreNuevo);
               RESULT = nueva; :}
          | RUTINA error
