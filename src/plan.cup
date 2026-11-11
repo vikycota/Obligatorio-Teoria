@@ -49,52 +49,6 @@ action code {:
 
     Set<String> nombresRutinas = new HashSet<>();
 
-    // encabezado
-
-    final Set<String> NIVELES = Set.of("principiante", "intermedio", "avanzado");
-
-    void validarNivel(String n, int linea) {
-        if (!NIVELES.contains(normalizar(n)))
-            error(linea, "nivel inválido '" + n + "' (se espera PRINCIPIANTE, INTERMEDIO o AVANZADO)");
-    }
-
-    void validarSemanas(int s, int linea) {
-        if (s < 1 || s > 52)
-            error(linea, "Semanas debe estar entre 1 y 52 (se encontró " + s + ")");
-    }
-
-    void validarProfesor(String p, int linea) {
-        if (p.trim().isEmpty())
-            error(linea, "el nombre del profesor está vacío");
-    }
-
-    // fecha dd/mm/aaaa
-    void validarFecha(String f, int linea) {
-        String[] p = f.split("/");
-        if (p[2].length() != 4) {
-            error(linea, "fecha '" + f + "': el año debe tener 4 dígitos");
-            return;
-        }
-        int d = Integer.parseInt(p[0]), m = Integer.parseInt(p[1]), a = Integer.parseInt(p[2]);
-        if (a < 1900 || a > 2100) { error(linea, "fecha '" + f + "': año fuera de rango (1900-2100)"); return; }
-        if (m < 1 || m > 12) { error(linea, "fecha '" + f + "': el mes " + m + " no existe"); return; }
-        int diasMes = diasDelMes(m, a);
-        if (d < 1)
-            error(linea, "fecha '" + f + "': el día " + d + " no existe");
-        else if (d > diasMes)
-            error(linea, "fecha '" + f + "': el mes " + m + " de " + a + " tiene " + diasMes + " días");
-    }
-
-    int diasDelMes(int m, int a) {
-        switch (m) {
-            case 2: return esBisiesto(a) ? 29 : 28;
-            case 4: case 6: case 9: case 11: return 30;
-            default: return 31;
-        }
-    }
-
-    boolean esBisiesto(int a) { return (a % 4 == 0 && a % 100 != 0) || a % 400 == 0; }
-
     // la lista no puede estar vacia ni tener repetidos
     void validarLista(String campo, List<String> l, int linea) {
         if (l.isEmpty()) { error(linea, "la lista de " + campo + " está vacía"); return; }
@@ -102,13 +56,6 @@ action code {:
         for (String x : l)
             if (!vistos.add(normalizar(x)))
                 error(linea, campo + ": '" + x + "' está repetido");
-    }
-
-    void validarEncabezado(List<Campo> campos, int linea) {
-        Set<String> vistos = validarDuplicados(campos);
-        for (String obligatorio : List.of("Nivel", "Objetivos", "Semanas", "Profesor", "Fecha"))
-            if (!vistos.contains(obligatorio))
-                error(linea, "al encabezado le falta el campo " + obligatorio);
     }
 
     // rutina
@@ -209,8 +156,7 @@ action code {:
 
 /* DECLARACIÓN DE TERMINALES */
 terminal PLAN, NIVEL, OBJETIVOS, SEMANAS, PROFESOR, FECHA_KW;
-terminal RUTINA, DIA, CALENTAMIENTO, INTENSIDAD, DURACION, MUSCULOS,
-         EQUIPAMIENTO, VARIANTES, EXTRA, OBS, EJERCICIOS;
+terminal RUTINA, DIA, CALENTAMIENTO, INTENSIDAD, DURACION, MUSCULOS,EQUIPAMIENTO, VARIANTES, EXTRA, OBS, EJERCICIOS;
 terminal DOSPUNTOS, COMA, CORCH_A, CORCH_C, IGUAL;
 
 terminal String PALABRA, CADENA, FECHA, FRACCION, ESTRELLAS, TIEMPO;
@@ -222,10 +168,10 @@ terminal SUPERSERIE, FIN, DESCANSO, REPS, VUELTA, SERIES_REPS, SERIES_MAX,
 terminal IGUAL_A, EXCEPTO, POR, VEZ, PORCENTAJE;
 
 /* DECLARACIÓN DE NO TERMINALES */
-non terminal plan, rutina, encabezado;
+non terminal plan, rutina;
 non terminal Integer rutinas;
-non terminal List<Campo> campos_enc, campos_rut;
-non terminal Campo campo_enc, campo_rut;
+non terminal List<Campo> campos_rut;
+non terminal Campo campo_rut;
 non terminal String nombre;
 non terminal List<String> lista, items;
 non terminal Integer intensidad;
@@ -239,28 +185,8 @@ non terminal lista_ej, ejercicio, spec, spec_item, descanso_opt,
              repeticion_opt, excepto_opt;
 
 /* GRAMÁTICA */
-plan ::= encabezado rutinas:n
+plan ::= rutinas:n
 {: if (n == 0) error(nleft, "el plan no tiene ninguna rutina"); :};
-
-// los campos del encabezado pueden ir en cualquier orden
-encabezado ::= PLAN:p CADENA:nom campos_enc:c
-{: if (nom.trim().isEmpty()) error(pleft, "el plan no tiene nombre");
-   validarEncabezado(c, pleft); :}
-             | PLAN error;
-
-campos_enc ::= campos_enc:l campo_enc:c {: l.add(c); RESULT = l; :}
-             | {: RESULT = new ArrayList<>(); :};
-
-campo_enc ::= NIVEL:k PALABRA:n
-{: validarNivel(n, kleft); RESULT = new Campo("Nivel", kleft, n); :}
-            | OBJETIVOS:k lista:l
-{: validarLista("Objetivos", l, kleft); RESULT = new Campo("Objetivos", kleft, l); :}
-            | SEMANAS:k ENTERO:s
-{: validarSemanas(s, kleft); RESULT = new Campo("Semanas", kleft, s); :}
-            | PROFESOR:k CADENA:p
-{: validarProfesor(p, kleft); RESULT = new Campo("Profesor", kleft, p); :}
-            | FECHA_KW:k FECHA:f
-{: validarFecha(f, kleft); RESULT = new Campo("Fecha", kleft, f); :};
 
 rutinas ::= rutinas:n rutina {: RESULT = n + 1; :}
           | {: RESULT = 0; :};
