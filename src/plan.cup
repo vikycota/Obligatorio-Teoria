@@ -16,8 +16,9 @@ parser code {:
 
   /* ===================== MODELO INTERMEDIO =====================
      El cuerpo conserva exactamente lo declarado. Por separado, Rutina expone
-     los ejercicios resueltos de Igual a y las capas de repetición sin expandir
-     la lista. EXCEPTO y la herencia de campos todavía no se aplican. */
+     los ejercicios resueltos de Igual a, con EXCEPTO aplicado en cada capa, y
+     las repeticiones sin expandir la lista. La herencia de campos todavía no
+     se aplica. */
 
   public static final class Campo {
     public final String nombre;
@@ -131,9 +132,12 @@ parser code {:
     public boolean usaPorcentaje() { return tipo == TipoRepeticion.PORCENTAJE; }
   }
 
-  /* Una capa por cada Igual a. Las vueltas se guardan como dato y la lista de
-     ejercicios se comparte: nunca se materializan N copias de los ejercicios. */
+  /* Una capa por cada Igual a. Las vueltas se guardan como dato y cada capa
+     tiene una lista de elementos visibles; nunca se materializan N copias de
+     los ejercicios. */
   public static final class EjecucionRutina {
+    public final List<ElementoEjercicio> ejerciciosVisibles;
+    /* Alias conservado para los consumidores existentes del modelo. */
     public final List<ElementoEjercicio> ejerciciosOriginales;
     public final ModificadorRepeticion repeticion;
     public final EjecucionRutina ejecucionReferenciada;
@@ -141,8 +145,9 @@ parser code {:
     public EjecucionRutina(List<ElementoEjercicio> ejerciciosOriginales,
                            ModificadorRepeticion repeticion,
                            EjecucionRutina ejecucionReferenciada) {
-      this.ejerciciosOriginales = Collections.unmodifiableList(
+      this.ejerciciosVisibles = Collections.unmodifiableList(
           new ArrayList<>(ejerciciosOriginales));
+      this.ejerciciosOriginales = ejerciciosVisibles;
       this.repeticion = repeticion;
       this.ejecucionReferenciada = ejecucionReferenciada;
     }
@@ -152,7 +157,11 @@ parser code {:
     }
 
     public List<ElementoEjercicio> getEjerciciosOriginales() {
-      return ejerciciosOriginales;
+      return ejerciciosVisibles;
+    }
+
+    public List<ElementoEjercicio> getEjerciciosVisibles() {
+      return ejerciciosVisibles;
     }
   }
 
@@ -162,20 +171,33 @@ parser code {:
     public final int lineaReferencia;
     public final ModificadorRepeticion repeticion;
     public final List<String> exclusiones;
+    public final boolean tieneExclusiones;
+    public final int lineaExclusiones;
 
     public CuerpoRutina(List<ElementoEjercicio> ejercicios, String referencia,
                         ModificadorRepeticion repeticion, List<String> exclusiones) {
-      this(ejercicios, referencia, -1, repeticion, exclusiones);
+      this(ejercicios, referencia, -1, repeticion, exclusiones,
+           !exclusiones.isEmpty(), -1);
     }
 
     public CuerpoRutina(List<ElementoEjercicio> ejercicios, String referencia,
                         int lineaReferencia, ModificadorRepeticion repeticion,
                         List<String> exclusiones) {
+      this(ejercicios, referencia, lineaReferencia, repeticion, exclusiones,
+           !exclusiones.isEmpty(), -1);
+    }
+
+    public CuerpoRutina(List<ElementoEjercicio> ejercicios, String referencia,
+                        int lineaReferencia, ModificadorRepeticion repeticion,
+                        List<String> exclusiones, boolean tieneExclusiones,
+                        int lineaExclusiones) {
       this.ejerciciosPropios = Collections.unmodifiableList(new ArrayList<>(ejercicios));
       this.rutinaReferenciada = referencia;
       this.lineaReferencia = lineaReferencia;
       this.repeticion = repeticion;
       this.exclusiones = Collections.unmodifiableList(new ArrayList<>(exclusiones));
+      this.tieneExclusiones = tieneExclusiones;
+      this.lineaExclusiones = lineaExclusiones;
     }
 
     public static CuerpoRutina conEjercicios(List<ElementoEjercicio> ejercicios) {
@@ -197,6 +219,19 @@ parser code {:
     }
 
     public boolean esReferencia() { return rutinaReferenciada != null; }
+  }
+
+  /* Distingue la ausencia de la cláusula de EXCEPTO []. */
+  public static final class ClausulaExclusion {
+    public final List<String> nombres;
+    public final boolean presente;
+    public final int linea;
+
+    public ClausulaExclusion(List<String> nombres, boolean presente, int linea) {
+      this.nombres = nombres;
+      this.presente = presente;
+      this.linea = linea;
+    }
   }
 
   public static final class Rutina {
@@ -228,7 +263,7 @@ parser code {:
       this.campos = Collections.unmodifiableList(new ArrayList<>(campos));
       this.cuerpo = cuerpo;
       this.ejecucion = ejecucion;
-      this.ejercicios = ejecucion.getEjerciciosOriginales();
+      this.ejercicios = ejecucion.getEjerciciosVisibles();
       this.validaSemanticamente = validaSemanticamente;
       this.cantidadErroresSemanticos = cantidadErroresSemanticos;
     }
@@ -574,8 +609,51 @@ void validarSuperserie(int ejercicios, int linea) {
     return nombreNuevo && !nombre.trim().isEmpty();
   }
 
-  /* Resuelve los ejercicios y conserva una capa por referencia. El cuerpo
-     declarado queda intacto para aplicar EXCEPTO y la herencia más adelante. */
+  /* EXCEPTO se limita a los elementos del nivel superior. Esto permite quitar
+     ejercicios individuales y superseries con nombre sin inventar nombres para
+     superseries anónimas ni alterar sus ejercicios internos. */
+  List<parser.ElementoEjercicio> aplicarExclusiones(
+      List<parser.ElementoEjercicio> ejercicios, parser.CuerpoRutina cuerpo) {
+    if (!cuerpo.tieneExclusiones)
+      return new ArrayList<>(ejercicios);
+
+    int linea = cuerpo.lineaExclusiones;
+    if (cuerpo.exclusiones.isEmpty()) {
+      error(linea, "EXCEPTO requiere al menos un nombre");
+      return new ArrayList<>(ejercicios);
+    }
+
+    LinkedHashMap<String, String> exclusionesUnicas = new LinkedHashMap<>();
+    for (String nombre : cuerpo.exclusiones) {
+      String clave = parser.claveRutina(nombre);
+      if (exclusionesUnicas.putIfAbsent(clave, nombre) != null)
+        error(linea, "EXCEPTO: el nombre '" + nombre + "' está repetido");
+    }
+
+    Set<String> nombresDisponibles = new HashSet<>();
+    for (parser.ElementoEjercicio ejercicio : ejercicios)
+      if (ejercicio.getNombre() != null)
+        nombresDisponibles.add(parser.claveRutina(ejercicio.getNombre()));
+
+    for (Map.Entry<String, String> exclusion : exclusionesUnicas.entrySet())
+      if (!nombresDisponibles.contains(exclusion.getKey()))
+        error(linea, "EXCEPTO: '" + exclusion.getValue()
+            + "' no corresponde a ningún ejercicio ni superserie con nombre "
+            + "de la rutina referenciada");
+
+    List<parser.ElementoEjercicio> filtrados = new ArrayList<>();
+    for (parser.ElementoEjercicio ejercicio : ejercicios) {
+      String nombre = ejercicio.getNombre();
+      if (nombre == null
+          || !exclusionesUnicas.containsKey(parser.claveRutina(nombre)))
+        filtrados.add(ejercicio);
+    }
+    return filtrados;
+  }
+
+  /* Resuelve los ejercicios y conserva una capa por referencia. Cada capa
+     contiene la secuencia visible luego de sus propias exclusiones; el cuerpo
+     declarado y la ejecución referenciada permanecen intactos. */
   parser.EjecucionRutina resolverEjecucion(
       String nombreRutina, parser.CuerpoRutina cuerpo) {
     if (!cuerpo.esReferencia())
@@ -604,8 +682,9 @@ void validarSuperserie(int ejercicios, int linea) {
     }
 
     parser.Rutina origen = valida.get();
-    return new parser.EjecucionRutina(origen.getEjercicios(), cuerpo.repeticion,
-                                      origen.ejecucion);
+    List<parser.ElementoEjercicio> visibles =
+        aplicarExclusiones(origen.getEjercicios(), cuerpo);
+    return new parser.EjecucionRutina(visibles, cuerpo.repeticion, origen.ejecucion);
   }
 
   List<parser.Campo> unir(List<parser.Campo> a, List<parser.Campo> b) {
@@ -653,7 +732,7 @@ non terminal parser.ElementoEjercicio ejercicio;
 non terminal parser.EspecificacionEjercicio spec;
 non terminal String descanso_opt, carga_opt, velocidad_opt;
 non terminal parser.ModificadorRepeticion repeticion_opt;
-non terminal List<String> excepto_opt;
+non terminal parser.ClausulaExclusion excepto_opt;
 
 /* =====================================================================
    GRAMÁTICA
@@ -780,7 +859,7 @@ cuerpo ::= EJERCICIOS lista_ej:l
                 Collections.emptyList()); :}
          | IGUAL_A:k CADENA:r repeticion_opt:m excepto_opt:e
            {: RESULT = new parser.CuerpoRutina(
-                Collections.emptyList(), r, kleft, m, e); :}
+                Collections.emptyList(), r, kleft, m, e.nombres, e.presente, e.linea); :}
          ;
 
 
@@ -851,6 +930,9 @@ repeticion_opt ::= POR CANTIDAD_REPETICION:n VEZ
                    {: RESULT = new parser.ModificadorRepeticion(null, null); :}
                  ;
 
-excepto_opt ::= EXCEPTO lista:l {: RESULT = l; :}
-              | /* vacío */     {: RESULT = new ArrayList<>(); :}
+excepto_opt ::= EXCEPTO:k lista:l
+                 {: RESULT = new parser.ClausulaExclusion(l, true, kleft); :}
+              | /* vacío */
+                 {: RESULT = new parser.ClausulaExclusion(
+                      Collections.emptyList(), false, -1); :}
               ;
