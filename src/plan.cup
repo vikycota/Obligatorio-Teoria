@@ -1,382 +1,339 @@
-/* =====================================================================
-   plan.cup  -  Analizador sintáctico + validaciones semánticas
-   Todo el código Java (validaciones y main) está en este archivo.
-   ===================================================================== */
 import java_cup.runtime.*;
 import java.util.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 
-/* ---------------------------------------------------------------------
-   Código del parser: main, reporte de errores y contador
-   --------------------------------------------------------------------- */
 parser code {:
-  public static int errores = 0;
+    public static int errores = 0;
 
-  /* Formato único para todos los errores: [Línea N] Error <tipo>: <mensaje> */
-  public static void reportar(int linea, String tipo, String msg) {
-    errores++;
-    System.err.println("[Línea " + linea + "] Error " + tipo + ": " + msg);
-  }
+    // todos los errores salen con el mismo formato
+    public static void reportar(int linea, String tipo, String msg) {
+        errores++;
+        System.err.println("[Línea " + linea + "] Error " + tipo + ": " + msg);
+    }
 
-  @Override
-  public void syntax_error(Symbol s) {
-    if (s.sym == sym.EOF)
-      reportar(s.left, "sintáctico", "el archivo terminó antes de lo esperado");
-    else
-      reportar(s.left, "sintáctico", "no se esperaba '" + s.value + "'");
-  }
+    public void syntax_error(Symbol s) {
+        if (s.sym == sym.EOF)
+            reportar(s.left, "sintáctico", "el archivo terminó antes de lo esperado");
+        else
+            reportar(s.left, "sintáctico", "no se esperaba '" + s.value + "'");
+    }
 
-  @Override
-  public void unrecovered_syntax_error(Symbol s) {
-    System.err.println("No se pudo recuperar del error. Análisis abortado.");
-  }
+    public void unrecovered_syntax_error(Symbol s) {
+        System.err.println("No se pudo recuperar del error. Análisis abortado.");
+    }
 
-  public static void main(String[] args) throws Exception {
-    Reader in = new InputStreamReader(new FileInputStream(args[0]), StandardCharsets.UTF_8);
-    new parser(new Lexer(in)).parse();
-    if (errores == 0) System.out.println("Análisis terminado: el plan es válido.");
-    else System.out.println("Análisis terminado con " + errores + " error(es).");
-  }
+    public static void main(String[] args) throws Exception {
+        Reader in = new InputStreamReader(new FileInputStream(args[0]), StandardCharsets.UTF_8);
+        new parser(new Lexer(in)).parse();
+        if (errores == 0) System.out.println("Análisis terminado: el plan es válido.");
+        else System.out.println("Análisis terminado con " + errores + " error(es).");
+    }
 :};
 
-/* ---------------------------------------------------------------------
-   Código de las acciones: una función de validación por cada campo
-   --------------------------------------------------------------------- */
 action code {:
 
-  /* Un campo leído: nombre, línea donde está y su valor */
-  class Campo {
-    String nombre; int linea; Object valor;
-    Campo(String n, int l, Object v) { nombre = n; linea = l; valor = v; }
-  }
-
-  void error(int linea, String msg) { parser.reportar(linea, "semántico", msg); }
-
-  /* Quita tildes y pasa a minúsculas: "Miércoles" -> "miercoles" */
-  String normalizar(String s) {
-    return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
-           .replaceAll("\\p{M}", "").toLowerCase().trim();
-  }
-
-  Set<String> nombresRutinas = new HashSet<>();
-
-  /* ===================== ENCABEZADO ===================== */
-
-  final Set<String> NIVELES = Set.of("principiante", "intermedio", "avanzado");
-
-  void validarNivel(String n, int linea) {
-    if (!NIVELES.contains(normalizar(n)))
-      error(linea, "nivel inválido '" + n + "' (se espera PRINCIPIANTE, INTERMEDIO o AVANZADO)");
-  }
-
-  void validarSemanas(int s, int linea) {
-    if (s < 1 || s > 52)
-      error(linea, "Semanas debe estar entre 1 y 52 (se encontró " + s + ")");
-  }
-
-  void validarProfesor(String p, int linea) {
-    if (p.trim().isEmpty())
-      error(linea, "el nombre del profesor está vacío");
-  }
-
-  /* Fecha dd/mm/aaaa: verifica formato, rangos y que la fecha exista */
-  void validarFecha(String f, int linea) {
-    String[] p = f.split("/");
-    if (p[2].length() != 4) {
-      error(linea, "fecha '" + f + "': el año debe tener 4 dígitos");
-      return;
+    // guarda un campo leido: nombre, linea y valor
+    class Campo {
+        String nombre; int linea; Object valor;
+        Campo(String n, int l, Object v) { nombre = n; linea = l; valor = v; }
     }
-    int d = Integer.parseInt(p[0]), m = Integer.parseInt(p[1]), a = Integer.parseInt(p[2]);
-    if (a < 1900 || a > 2100) { error(linea, "fecha '" + f + "': año fuera de rango (1900-2100)"); return; }
-    if (m < 1 || m > 12)      { error(linea, "fecha '" + f + "': el mes " + m + " no existe"); return; }
-    int diasMes = diasDelMes(m, a);
-    if (d < 1)
-      error(linea, "fecha '" + f + "': el día " + d + " no existe");
-    else if (d > diasMes)
-      error(linea, "fecha '" + f + "': el mes " + m + " de " + a + " tiene " + diasMes + " días");
-  }
 
-  int diasDelMes(int m, int a) {
-    switch (m) {
-      case 2:  return esBisiesto(a) ? 29 : 28;
-      case 4: case 6: case 9: case 11: return 30;
-      default: return 31;
+    void error(int linea, String msg) { parser.reportar(linea, "semántico", msg); }
+
+    // saca tildes y pasa a minuscula: Miércoles -> miercoles
+    String normalizar(String s) {
+        return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+               .replaceAll("\\p{M}", "").toLowerCase().trim();
     }
-  }
 
-  boolean esBisiesto(int a) { return (a % 4 == 0 && a % 100 != 0) || a % 400 == 0; }
+    Set<String> nombresRutinas = new HashSet<>();
 
-  /* Objetivos, músculos, equipamiento, variantes: no vacía y sin repetidos */
-  void validarLista(String campo, List<String> l, int linea) {
-    if (l.isEmpty()) { error(linea, "la lista de " + campo + " está vacía"); return; }
-    Set<String> vistos = new HashSet<>();
-    for (String x : l)
-      if (!vistos.add(normalizar(x)))
-        error(linea, campo + ": '" + x + "' está repetido");
-  }
+    // encabezado
 
-  void validarEncabezado(List<Campo> campos, int linea) {
-    Set<String> vistos = validarDuplicados(campos);
-    for (String obligatorio : List.of("Nivel", "Objetivos", "Semanas", "Profesor", "Fecha"))
-      if (!vistos.contains(obligatorio))
-        error(linea, "al encabezado le falta el campo " + obligatorio);
-  }
+    final Set<String> NIVELES = Set.of("principiante", "intermedio", "avanzado");
 
-  /* ===================== RUTINA ===================== */
-
-  final Set<String> DIAS = Set.of("lunes", "martes", "miercoles", "jueves",
-                                   "viernes", "sabado", "domingo");
-
-  void validarDia(String d, int linea) {
-    if (!DIAS.contains(normalizar(d)))
-      error(linea, "día inválido '" + d + "'");
-  }
-
-  void validarCalentamiento(String c, int linea) {
-    if (c.trim().isEmpty()) error(linea, "el calentamiento está vacío");
-  }
-
-  /* Intensidad en 3 notaciones. Devuelve el nivel 1..5, o 0 si es inválida.
-     Texto: MUY BAJA=1, BAJA=2, MEDIA=3, ALTA=4, MUY ALTA=5 (decisión de diseño). */
-  int intensidadTexto(String t, int linea) {
-    switch (normalizar(t)) {
-      case "muy baja": return 1;
-      case "baja":     return 2;
-      case "media":    return 3;
-      case "alta":     return 4;
-      case "muy alta": return 5;
+    void validarNivel(String n, int linea) {
+        if (!NIVELES.contains(normalizar(n)))
+            error(linea, "nivel inválido '" + n + "' (se espera PRINCIPIANTE, INTERMEDIO o AVANZADO)");
     }
-    error(linea, "intensidad inválida '" + t + "' (se espera MUY BAJA, BAJA, MEDIA, ALTA o MUY ALTA)");
-    return 0;
-  }
 
-  int intensidadEstrellas(String e, int linea) {
-    if (e.length() > 5) {
-      error(linea, "intensidad '" + e + "': como máximo 5 estrellas");
-      return 0;
+    void validarSemanas(int s, int linea) {
+        if (s < 1 || s > 52)
+            error(linea, "Semanas debe estar entre 1 y 52 (se encontró " + s + ")");
     }
-    return e.length();
-  }
 
-  int intensidadFraccion(String f, int linea) {
-    String[] p = f.split("/");
-    int num = Integer.parseInt(p[0]), den = Integer.parseInt(p[1]);
-    if (den != 5)            { error(linea, "intensidad '" + f + "': debe expresarse sobre 5 (ej. 4/5)"); return 0; }
-    if (num < 1 || num > 5)  { error(linea, "intensidad '" + f + "': debe estar entre 1/5 y 5/5"); return 0; }
-    return num;
-  }
+    void validarProfesor(String p, int linea) {
+        if (p.trim().isEmpty())
+            error(linea, "el nombre del profesor está vacío");
+    }
 
-  /* Duración: número + h, m o s. Se devuelve en minutos. */
-  double validarDuracion(String t, int linea) {
-    int n = Integer.parseInt(t.substring(0, t.length() - 1));
-    char u = t.charAt(t.length() - 1);
-    double minutos = (u == 'h') ? n * 60 : (u == 'm') ? n : n / 60.0;
-    if (minutos <= 0)      error(linea, "la duración debe ser mayor que 0");
-    else if (minutos > 24 * 60) error(linea, "la duración '" + t + "' supera las 24 horas");
-    return minutos;
-  }
+    // fecha dd/mm/aaaa
+    void validarFecha(String f, int linea) {
+        String[] p = f.split("/");
+        if (p[2].length() != 4) {
+            error(linea, "fecha '" + f + "': el año debe tener 4 dígitos");
+            return;
+        }
+        int d = Integer.parseInt(p[0]), m = Integer.parseInt(p[1]), a = Integer.parseInt(p[2]);
+        if (a < 1900 || a > 2100) { error(linea, "fecha '" + f + "': año fuera de rango (1900-2100)"); return; }
+        if (m < 1 || m > 12) { error(linea, "fecha '" + f + "': el mes " + m + " no existe"); return; }
+        int diasMes = diasDelMes(m, a);
+        if (d < 1)
+            error(linea, "fecha '" + f + "': el día " + d + " no existe");
+        else if (d > diasMes)
+            error(linea, "fecha '" + f + "': el mes " + m + " de " + a + " tiene " + diasMes + " días");
+    }
 
-  void validarObs(String o, int linea) {
-    if (o.trim().isEmpty()) error(linea, "la observación está vacía");
-  }
+    int diasDelMes(int m, int a) {
+        switch (m) {
+            case 2: return esBisiesto(a) ? 29 : 28;
+            case 4: case 6: case 9: case 11: return 30;
+            default: return 31;
+        }
+    }
 
-  /* Extra: etiqueta=valor, sin etiquetas repetidas */
-  void validarExtra(List<String[]> pares, int linea) {
-    Set<String> etiquetas = new HashSet<>();
-    for (String[] par : pares)
-      if (!etiquetas.add(normalizar(par[0])))
-        error(linea, "Extra: la etiqueta '" + par[0] + "' está repetida");
-  }
+    boolean esBisiesto(int a) { return (a % 4 == 0 && a % 100 != 0) || a % 400 == 0; }
 
-  /* Devuelve los nombres de campos vistos y avisa los repetidos */
-  Set<String> validarDuplicados(List<Campo> campos) {
-    Set<String> vistos = new HashSet<>();
-    for (Campo c : campos)
-      if (!vistos.add(c.nombre))
-        error(c.linea, "el campo " + c.nombre + " aparece más de una vez");
-    return vistos;
-  }
+    // la lista no puede estar vacia ni tener repetidos
+    void validarLista(String campo, List<String> l, int linea) {
+        if (l.isEmpty()) { error(linea, "la lista de " + campo + " está vacía"); return; }
+        Set<String> vistos = new HashSet<>();
+        for (String x : l)
+            if (!vistos.add(normalizar(x)))
+                error(linea, campo + ": '" + x + "' está repetido");
+    }
 
-  /* Con EJERCICIOS son obligatorios Día, Intensidad, Duración y Músculos.
-     Con Igual a solo Día: lo demás se hereda de la rutina referenciada. */
-  void validarRutina(String nombre, List<Campo> campos, boolean esIgualA, int linea) {
-    if (nombre.trim().isEmpty()) error(linea, "la rutina no tiene nombre");
-    else if (!nombresRutinas.add(normalizar(nombre)))
-      error(linea, "ya existe una rutina llamada '" + nombre + "'");
+    void validarEncabezado(List<Campo> campos, int linea) {
+        Set<String> vistos = validarDuplicados(campos);
+        for (String obligatorio : List.of("Nivel", "Objetivos", "Semanas", "Profesor", "Fecha"))
+            if (!vistos.contains(obligatorio))
+                error(linea, "al encabezado le falta el campo " + obligatorio);
+    }
 
-    Set<String> vistos = validarDuplicados(campos);
-    List<String> obligatorios = esIgualA
-        ? List.of("Día")
-        : List.of("Día", "Intensidad", "Duración", "Músculos");
-    for (String o : obligatorios)
-      if (!vistos.contains(o))
-        error(linea, "a la rutina '" + nombre + "' le falta el campo " + o);
-  }
+    // rutina
 
-  List<Campo> unir(List<Campo> a, List<Campo> b) {
-    List<Campo> r = new ArrayList<>(a); r.addAll(b); return r;
-  }
+    final Set<String> DIAS = Set.of("lunes", "martes", "miercoles", "jueves",
+                                    "viernes", "sabado", "domingo");
+
+    void validarDia(String d, int linea) {
+        if (!DIAS.contains(normalizar(d)))
+            error(linea, "día inválido '" + d + "'");
+    }
+
+    void validarCalentamiento(String c, int linea) {
+        if (c.trim().isEmpty()) error(linea, "el calentamiento está vacío");
+    }
+
+    // intensidad: devuelve de 1 a 5, o 0 si no es valida
+    // MUY BAJA=1, BAJA=2, MEDIA=3, ALTA=4, MUY ALTA=5
+    int intensidadTexto(String t, int linea) {
+        switch (normalizar(t)) {
+            case "muy baja": return 1;
+            case "baja": return 2;
+            case "media": return 3;
+            case "alta": return 4;
+            case "muy alta": return 5;
+        }
+        error(linea, "intensidad inválida '" + t + "' (se espera MUY BAJA, BAJA, MEDIA, ALTA o MUY ALTA)");
+        return 0;
+    }
+
+    int intensidadEstrellas(String e, int linea) {
+        if (e.length() > 5) {
+            error(linea, "intensidad '" + e + "': como máximo 5 estrellas");
+            return 0;
+        }
+        return e.length();
+    }
+
+    int intensidadFraccion(String f, int linea) {
+        String[] p = f.split("/");
+        int num = Integer.parseInt(p[0]), den = Integer.parseInt(p[1]);
+        if (den != 5) { error(linea, "intensidad '" + f + "': debe expresarse sobre 5 (ej. 4/5)"); return 0; }
+        if (num < 1 || num > 5) { error(linea, "intensidad '" + f + "': debe estar entre 1/5 y 5/5"); return 0; }
+        return num;
+    }
+
+    // duracion en h, m o s, la pasamos a minutos
+    double validarDuracion(String t, int linea) {
+        int n = Integer.parseInt(t.substring(0, t.length() - 1));
+        char u = t.charAt(t.length() - 1);
+        double minutos = (u == 'h') ? n * 60 : (u == 'm') ? n : n / 60.0;
+        if (minutos <= 0) error(linea, "la duración debe ser mayor que 0");
+        else if (minutos > 24 * 60) error(linea, "la duración '" + t + "' supera las 24 horas");
+        return minutos;
+    }
+
+    void validarObs(String o, int linea) {
+        if (o.trim().isEmpty()) error(linea, "la observación está vacía");
+    }
+
+    // etiqueta=valor, sin etiquetas repetidas
+    void validarExtra(List<String[]> pares, int linea) {
+        Set<String> etiquetas = new HashSet<>();
+        for (String[] par : pares)
+            if (!etiquetas.add(normalizar(par[0])))
+                error(linea, "Extra: la etiqueta '" + par[0] + "' está repetida");
+    }
+
+    // devuelve los nombres de campos vistos y avisa los repetidos
+    Set<String> validarDuplicados(List<Campo> campos) {
+        Set<String> vistos = new HashSet<>();
+        for (Campo c : campos)
+            if (!vistos.add(c.nombre))
+                error(c.linea, "el campo " + c.nombre + " aparece más de una vez");
+        return vistos;
+    }
+
+    // con EJERCICIOS hacen falta Día, Intensidad, Duración y Músculos
+    // con Igual a alcanza con Día, lo demas se hereda
+    void validarRutina(String nombre, List<Campo> campos, boolean esIgualA, int linea) {
+        if (nombre.trim().isEmpty()) error(linea, "la rutina no tiene nombre");
+        else if (!nombresRutinas.add(normalizar(nombre)))
+            error(linea, "ya existe una rutina llamada '" + nombre + "'");
+
+        Set<String> vistos = validarDuplicados(campos);
+        List<String> obligatorios = esIgualA
+            ? List.of("Día")
+            : List.of("Día", "Intensidad", "Duración", "Músculos");
+        for (String o : obligatorios)
+            if (!vistos.contains(o))
+                error(linea, "a la rutina '" + nombre + "' le falta el campo " + o);
+    }
+
+    List<Campo> unir(List<Campo> a, List<Campo> b) {
+        List<Campo> r = new ArrayList<>(a); r.addAll(b); return r;
+    }
 :};
 
-/* ---------------------------------------------------------------------
-   Terminales
-   --------------------------------------------------------------------- */
+/* DECLARACIÓN DE TERMINALES */
 terminal PLAN, NIVEL, OBJETIVOS, SEMANAS, PROFESOR, FECHA_KW;
 terminal RUTINA, DIA, CALENTAMIENTO, INTENSIDAD, DURACION, MUSCULOS,
          EQUIPAMIENTO, VARIANTES, EXTRA, OBS, EJERCICIOS;
 terminal DOSPUNTOS, COMA, CORCH_A, CORCH_C, IGUAL;
 
-terminal String  PALABRA, CADENA, FECHA, FRACCION, ESTRELLAS, TIEMPO;
+terminal String PALABRA, CADENA, FECHA, FRACCION, ESTRELLAS, TIEMPO;
 terminal Integer ENTERO;
 
-/* Persona 2 y 3 (provisorios) */
+// estos son de las otras partes, falta completarlos
 terminal SUPERSERIE, FIN, DESCANSO, REPS, VUELTA, SERIES_REPS, SERIES_MAX,
          SERIES_TIEMPO, CARGA, VELOCIDAD, ARROBA;
 terminal IGUAL_A, EXCEPTO, POR, VEZ, PORCENTAJE;
 
-/* ---------------------------------------------------------------------
-   No terminales
-   --------------------------------------------------------------------- */
+/* DECLARACIÓN DE NO TERMINALES */
 non terminal plan, rutina, encabezado;
-non terminal Integer      rutinas;
-non terminal List<Campo>  campos_enc, campos_rut;
-non terminal Campo        campo_enc, campo_rut;
-non terminal String       nombre;
+non terminal Integer rutinas;
+non terminal List<Campo> campos_enc, campos_rut;
+non terminal Campo campo_enc, campo_rut;
+non terminal String nombre;
 non terminal List<String> lista, items;
-non terminal Integer      intensidad;
+non terminal Integer intensidad;
 non terminal List<String[]> pares;
-non terminal String[]     par;
-non terminal String       valor_extra;
-non terminal Boolean      cuerpo;
+non terminal String[] par;
+non terminal String valor_extra;
+non terminal Boolean cuerpo;
 
-/* Persona 2 y 3 (provisorios) */
+// estos tambien son provisorios
 non terminal lista_ej, ejercicio, spec, spec_item, descanso_opt,
              repeticion_opt, excepto_opt;
 
-/* =====================================================================
-   GRAMÁTICA
-   ===================================================================== */
-
+/* GRAMÁTICA */
 plan ::= encabezado rutinas:n
-         {: if (n == 0) error(nleft, "el plan no tiene ninguna rutina"); :}
-       ;
+{: if (n == 0) error(nleft, "el plan no tiene ninguna rutina"); :};
 
-/* ---------- Encabezado (los campos pueden venir en cualquier orden) ---------- */
-
+// los campos del encabezado pueden ir en cualquier orden
 encabezado ::= PLAN:p CADENA:nom campos_enc:c
-             {: if (nom.trim().isEmpty()) error(pleft, "el plan no tiene nombre");
-                validarEncabezado(c, pleft); :}
-             | PLAN error
-             ;
+{: if (nom.trim().isEmpty()) error(pleft, "el plan no tiene nombre");
+   validarEncabezado(c, pleft); :}
+             | PLAN error;
 
-campos_enc ::= campos_enc:l campo_enc:c  {: l.add(c); RESULT = l; :}
-             | /* vacío */                {: RESULT = new ArrayList<>(); :}
-             ;
+campos_enc ::= campos_enc:l campo_enc:c {: l.add(c); RESULT = l; :}
+             | {: RESULT = new ArrayList<>(); :};
 
 campo_enc ::= NIVEL:k PALABRA:n
-              {: validarNivel(n, kleft); RESULT = new Campo("Nivel", kleft, n); :}
+{: validarNivel(n, kleft); RESULT = new Campo("Nivel", kleft, n); :}
             | OBJETIVOS:k lista:l
-              {: validarLista("Objetivos", l, kleft); RESULT = new Campo("Objetivos", kleft, l); :}
+{: validarLista("Objetivos", l, kleft); RESULT = new Campo("Objetivos", kleft, l); :}
             | SEMANAS:k ENTERO:s
-              {: validarSemanas(s, kleft); RESULT = new Campo("Semanas", kleft, s); :}
+{: validarSemanas(s, kleft); RESULT = new Campo("Semanas", kleft, s); :}
             | PROFESOR:k CADENA:p
-              {: validarProfesor(p, kleft); RESULT = new Campo("Profesor", kleft, p); :}
+{: validarProfesor(p, kleft); RESULT = new Campo("Profesor", kleft, p); :}
             | FECHA_KW:k FECHA:f
-              {: validarFecha(f, kleft); RESULT = new Campo("Fecha", kleft, f); :}
-            ;
+{: validarFecha(f, kleft); RESULT = new Campo("Fecha", kleft, f); :};
 
-/* ---------- Rutinas ---------- */
+rutinas ::= rutinas:n rutina {: RESULT = n + 1; :}
+          | {: RESULT = 0; :};
 
-rutinas ::= rutinas:n rutina  {: RESULT = n + 1; :}
-          | /* vacío */          {: RESULT = 0; :}
-          ;
-
-/* Campos antes y después del cuerpo, en cualquier orden.
-   Si hay un error adentro, se descarta hasta la próxima RUTINA. */
+// campos antes y despues del cuerpo, en cualquier orden
+// si hay un error se descarta hasta la proxima RUTINA
 rutina ::= RUTINA:r CADENA:nom campos_rut:a cuerpo:igual campos_rut:b
-           {: validarRutina(nom, unir(a, b), igual, rleft); :}
-         | RUTINA error
-         ;
+{: validarRutina(nom, unir(a, b), igual, rleft); :}
+         | RUTINA error;
 
-campos_rut ::= campos_rut:l campo_rut:c  {: l.add(c); RESULT = l; :}
-             | /* vacío */                {: RESULT = new ArrayList<>(); :}
-             ;
+campos_rut ::= campos_rut:l campo_rut:c {: l.add(c); RESULT = l; :}
+             | {: RESULT = new ArrayList<>(); :};
 
 campo_rut ::= DIA:k PALABRA:d
-              {: validarDia(d, kleft); RESULT = new Campo("Día", kleft, d); :}
+{: validarDia(d, kleft); RESULT = new Campo("Día", kleft, d); :}
             | CALENTAMIENTO:k CADENA:c
-              {: validarCalentamiento(c, kleft); RESULT = new Campo("Calentamiento", kleft, c); :}
+{: validarCalentamiento(c, kleft); RESULT = new Campo("Calentamiento", kleft, c); :}
             | INTENSIDAD:k intensidad:i
-              {: RESULT = new Campo("Intensidad", kleft, i); :}
+{: RESULT = new Campo("Intensidad", kleft, i); :}
             | DURACION:k TIEMPO:t
-              {: RESULT = new Campo("Duración", kleft, validarDuracion(t, kleft)); :}
+{: RESULT = new Campo("Duración", kleft, validarDuracion(t, kleft)); :}
             | MUSCULOS:k lista:l
-              {: validarLista("Músculos", l, kleft); RESULT = new Campo("Músculos", kleft, l); :}
+{: validarLista("Músculos", l, kleft); RESULT = new Campo("Músculos", kleft, l); :}
             | EQUIPAMIENTO:k lista:l
-              {: validarLista("Equipamiento", l, kleft); RESULT = new Campo("Equipamiento", kleft, l); :}
+{: validarLista("Equipamiento", l, kleft); RESULT = new Campo("Equipamiento", kleft, l); :}
             | VARIANTES:k lista:l
-              {: validarLista("Variantes", l, kleft); RESULT = new Campo("Variantes", kleft, l); :}
+{: validarLista("Variantes", l, kleft); RESULT = new Campo("Variantes", kleft, l); :}
             | EXTRA:k pares:p
-              {: validarExtra(p, kleft); RESULT = new Campo("Extra", kleft, p); :}
+{: validarExtra(p, kleft); RESULT = new Campo("Extra", kleft, p); :}
             | OBS:k CADENA:o
-              {: validarObs(o, kleft); RESULT = new Campo("Obs", kleft, o); :}
-            ;
+{: validarObs(o, kleft); RESULT = new Campo("Obs", kleft, o); :};
 
-intensidad ::= FRACCION:f   {: RESULT = intensidadFraccion(f, fleft); :}
-             | ESTRELLAS:e  {: RESULT = intensidadEstrellas(e, eleft); :}
-             | nombre:t     {: RESULT = intensidadTexto(t, tleft); :}
-             ;
+intensidad ::= FRACCION:f {: RESULT = intensidadFraccion(f, fleft); :}
+             | ESTRELLAS:e {: RESULT = intensidadEstrellas(e, eleft); :}
+             | nombre:t {: RESULT = intensidadTexto(t, tleft); :};
 
-/* ---------- Auxiliares ---------- */
+// nombre de una o mas palabras: press banca, MUY ALTA
+nombre ::= nombre:n PALABRA:p {: RESULT = n + " " + p; :}
+         | PALABRA:p {: RESULT = p; :};
 
-/* Nombre libre de una o más palabras: "press banca", "MUY ALTA" */
-nombre ::= nombre:n PALABRA:p  {: RESULT = n + " " + p; :}
-         | PALABRA:p           {: RESULT = p; :}
-         ;
+lista ::= CORCH_A items:l CORCH_C {: RESULT = l; :}
+        | CORCH_A CORCH_C {: RESULT = new ArrayList<>(); :};
 
-lista ::= CORCH_A items:l CORCH_C  {: RESULT = l; :}
-        | CORCH_A CORCH_C          {: RESULT = new ArrayList<>(); :}
-        ;
+items ::= items:l COMA nombre:n {: l.add(n); RESULT = l; :}
+        | nombre:n {: RESULT = new ArrayList<>(); RESULT.add(n); :};
 
-items ::= items:l COMA nombre:n  {: l.add(n); RESULT = l; :}
-        | nombre:n               {: RESULT = new ArrayList<>(); RESULT.add(n); :}
-        ;
+pares ::= pares:l COMA par:p {: l.add(p); RESULT = l; :}
+        | par:p {: RESULT = new ArrayList<>(); RESULT.add(p); :};
 
-pares ::= pares:l COMA par:p  {: l.add(p); RESULT = l; :}
-        | par:p               {: RESULT = new ArrayList<>(); RESULT.add(p); :}
-        ;
+par ::= nombre:e IGUAL valor_extra:v {: RESULT = new String[]{e, v}; :};
 
-par ::= nombre:e IGUAL valor_extra:v  {: RESULT = new String[]{e, v}; :} ;
+valor_extra ::= nombre:n {: RESULT = n; :}
+              | CADENA:c {: RESULT = c; :}
+              | ENTERO:i {: RESULT = i.toString(); :};
 
-valor_extra ::= nombre:n  {: RESULT = n; :}
-              | CADENA:c  {: RESULT = c; :}
-              | ENTERO:i  {: RESULT = i.toString(); :}
-              ;
+// PROVISORIO, hay que reemplazarlo
+// devuelve true si la rutina usa Igual a
+cuerpo ::= EJERCICIOS lista_ej {: RESULT = false; :}
+         | IGUAL_A CADENA repeticion_opt excepto_opt {: RESULT = true; :};
 
-/* =====================================================================
-   PROVISORIO - tenemos que reemplazar
-   ===================================================================== */
-
-/* devuelve true si la rutina usa Igual a */
-cuerpo ::= EJERCICIOS lista_ej                        {: RESULT = false; :}
-         | IGUAL_A CADENA repeticion_opt excepto_opt  {: RESULT = true;  :}
-         ;
-
-lista_ej ::= lista_ej ejercicio | ejercicio ;
+lista_ej ::= lista_ej ejercicio | ejercicio;
 
 ejercicio ::= nombre DOSPUNTOS spec
             | nombre SUPERSERIE ENTERO VUELTA lista_ej FIN SUPERSERIE descanso_opt
-            | SUPERSERIE ENTERO VUELTA lista_ej FIN SUPERSERIE descanso_opt
-            ;
+            | SUPERSERIE ENTERO VUELTA lista_ej FIN SUPERSERIE descanso_opt;
 
-spec ::= spec spec_item | spec_item ;
+spec ::= spec spec_item | spec_item;
 
 spec_item ::= SERIES_REPS | SERIES_MAX | SERIES_TIEMPO | TIEMPO | CARGA | VELOCIDAD
-            | ENTERO | REPS | ARROBA | COMA | DESCANSO ;
+            | ENTERO | REPS | ARROBA | COMA | DESCANSO;
 
-descanso_opt ::= COMA DESCANSO TIEMPO | /* vacío */ ;
+descanso_opt ::= COMA DESCANSO TIEMPO |;
 
-repeticion_opt ::= POR ENTERO VEZ | PORCENTAJE | /* vacío */ ;
+repeticion_opt ::= POR ENTERO VEZ | PORCENTAJE |;
 
-excepto_opt ::= EXCEPTO lista | /* vacío */ ;
+excepto_opt ::= EXCEPTO lista |;
