@@ -175,6 +175,21 @@ parser code {:
       return Optional.ofNullable(repeticion.veces);
     }
 
+    /* Cantidad que debe ejecutar el consumidor, independientemente de cómo se
+       haya escrito el modificador. La declaración original sigue disponible
+       en repeticion para distinguir ausencia, x 1 vez y 100%. */
+    public java.math.BigInteger getVueltasEfectivas() {
+      if (repeticion.usaVeces())
+        return repeticion.veces;
+      if (repeticion.usaPorcentaje()) {
+        String cantidad = repeticion.porcentaje.substring(
+            0, repeticion.porcentaje.length() - 1);
+        return new java.math.BigInteger(cantidad).divide(
+            java.math.BigInteger.valueOf(100));
+      }
+      return java.math.BigInteger.ONE;
+    }
+
     public List<ElementoEjercicio> getEjerciciosOriginales() {
       return ejerciciosVisibles;
     }
@@ -438,9 +453,15 @@ parser.ModificadorRepeticion validarRepeticionVeces(
 
 parser.ModificadorRepeticion validarPorcentajeRepeticion(String porcentaje, int linea) {
     String cantidad = porcentaje.substring(0, porcentaje.length() - 1);
-    if (entero(cantidad).signum() <= 0)
+    java.math.BigInteger valor = entero(cantidad);
+    if (valor.signum() <= 0) {
         error(linea, "el porcentaje de repetición debe ser positivo (se encontró "
               + porcentaje + ")");
+    } else if (!valor.mod(java.math.BigInteger.valueOf(100)).equals(
+                   java.math.BigInteger.ZERO)) {
+        error(linea, "el porcentaje de repetición debe ser múltiplo de 100 "
+              + "(se encontró " + porcentaje + ")");
+    }
     return new parser.ModificadorRepeticion(null, porcentaje);
 }
 
