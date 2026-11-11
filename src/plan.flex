@@ -81,7 +81,12 @@ FRACCION = {ENTERO}"/"{ENTERO}
 "Igual"{ESPACIO}"a"             { return symbol(sym.IGUAL_A); }
 "EXCEPTO"                       { return symbol(sym.EXCEPTO); }
 "x"                             { return symbol(sym.POR); }
-"vez" | "veces"                 { return symbol(sym.VEZ); }
+/* El contexto derecho permite que la cantidad de vueltas use BigInteger sin
+   cambiar el tipo de ENTERO en el resto de la gramatica. */
+{ENTERO}/[ \t\r\n\f]+("vez"|"veces")
+                                { return symbol(sym.CANTIDAD_REPETICION, yytext()); }
+"vez"                           { return symbol(sym.VEZ); }
+"veces"                         { return symbol(sym.VECES); }
 {ENTERO}"%"                     { return symbol(sym.PORCENTAJE); }
 
 /* ---------- Valores compartidos ---------- */

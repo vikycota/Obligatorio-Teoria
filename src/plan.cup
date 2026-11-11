@@ -16,8 +16,8 @@ parser code {:
 
   /* ===================== MODELO INTERMEDIO =====================
      El cuerpo conserva exactamente lo declarado. Por separado, Rutina expone
-     los ejercicios resueltos de Igual a. EXCEPTO, la repetición y la herencia
-     de campos todavía no se aplican. */
+     los ejercicios resueltos de Igual a y las capas de repetición sin expandir
+     la lista. EXCEPTO y la herencia de campos todavía no se aplican. */
 
   public static final class Campo {
     public final String nombre;
@@ -92,30 +92,68 @@ parser code {:
     public String getNombre() { return nombre; }
   }
 
+  public enum TipoRepeticion { NINGUNA, VECES, PORCENTAJE }
+
   public static final class ModificadorRepeticion {
-    public final Integer veces;
+    public final TipoRepeticion tipo;
+    public final java.math.BigInteger veces;
     /* Se conserva el token completo (por ejemplo, "200%"). Puede superar int. */
     public final String porcentaje;
 
-    public ModificadorRepeticion(Integer veces, String porcentaje) {
+    private ModificadorRepeticion(TipoRepeticion tipo,
+                                  java.math.BigInteger veces, String porcentaje) {
+      this.tipo = tipo;
       this.veces = veces;
       this.porcentaje = porcentaje;
     }
 
-    public static ModificadorRepeticion ninguno() {
-      return new ModificadorRepeticion(null, null);
+    public ModificadorRepeticion(java.math.BigInteger veces, String porcentaje) {
+      this(veces != null ? TipoRepeticion.VECES
+                         : porcentaje != null ? TipoRepeticion.PORCENTAJE
+                                              : TipoRepeticion.NINGUNA,
+           veces, porcentaje);
     }
 
-    public static ModificadorRepeticion veces(int cantidad) {
-      return new ModificadorRepeticion(cantidad, null);
+    public static ModificadorRepeticion ninguno() {
+      return new ModificadorRepeticion(TipoRepeticion.NINGUNA, null, null);
+    }
+
+    public static ModificadorRepeticion veces(java.math.BigInteger cantidad) {
+      return new ModificadorRepeticion(TipoRepeticion.VECES, cantidad, null);
     }
 
     public static ModificadorRepeticion porcentaje(String valor) {
-      return new ModificadorRepeticion(null, valor);
+      return new ModificadorRepeticion(TipoRepeticion.PORCENTAJE, null, valor);
     }
 
-    public boolean usaVeces() { return veces != null; }
-    public boolean usaPorcentaje() { return porcentaje != null; }
+    public boolean estaPresente() { return tipo != TipoRepeticion.NINGUNA; }
+    public boolean usaVeces() { return tipo == TipoRepeticion.VECES; }
+    public boolean usaPorcentaje() { return tipo == TipoRepeticion.PORCENTAJE; }
+  }
+
+  /* Una capa por cada Igual a. Las vueltas se guardan como dato y la lista de
+     ejercicios se comparte: nunca se materializan N copias de los ejercicios. */
+  public static final class EjecucionRutina {
+    public final List<ElementoEjercicio> ejerciciosOriginales;
+    public final ModificadorRepeticion repeticion;
+    public final EjecucionRutina ejecucionReferenciada;
+
+    public EjecucionRutina(List<ElementoEjercicio> ejerciciosOriginales,
+                           ModificadorRepeticion repeticion,
+                           EjecucionRutina ejecucionReferenciada) {
+      this.ejerciciosOriginales = Collections.unmodifiableList(
+          new ArrayList<>(ejerciciosOriginales));
+      this.repeticion = repeticion;
+      this.ejecucionReferenciada = ejecucionReferenciada;
+    }
+
+    public Optional<java.math.BigInteger> getCantidadVueltas() {
+      return Optional.ofNullable(repeticion.veces);
+    }
+
+    public List<ElementoEjercicio> getEjerciciosOriginales() {
+      return ejerciciosOriginales;
+    }
   }
 
   public static final class CuerpoRutina {
@@ -165,6 +203,8 @@ parser code {:
     public final String nombre;
     public final List<Campo> campos;
     public final CuerpoRutina cuerpo;
+    public final EjecucionRutina ejecucion;
+    /* Alias conservado para los consumidores existentes del modelo. */
     public final List<ElementoEjercicio> ejercicios;
     public final boolean validaSemanticamente;
     public final int cantidadErroresSemanticos;
@@ -175,17 +215,20 @@ parser code {:
 
     public Rutina(String nombre, List<Campo> campos, CuerpoRutina cuerpo,
                   boolean validaSemanticamente, int cantidadErroresSemanticos) {
-      this(nombre, campos, cuerpo, cuerpo.ejerciciosPropios,
+      this(nombre, campos, cuerpo,
+           new EjecucionRutina(cuerpo.ejerciciosPropios,
+                               ModificadorRepeticion.ninguno(), null),
            validaSemanticamente, cantidadErroresSemanticos);
     }
 
     public Rutina(String nombre, List<Campo> campos, CuerpoRutina cuerpo,
-                  List<ElementoEjercicio> ejercicios,
+                  EjecucionRutina ejecucion,
                   boolean validaSemanticamente, int cantidadErroresSemanticos) {
       this.nombre = nombre;
       this.campos = Collections.unmodifiableList(new ArrayList<>(campos));
       this.cuerpo = cuerpo;
-      this.ejercicios = Collections.unmodifiableList(new ArrayList<>(ejercicios));
+      this.ejecucion = ejecucion;
+      this.ejercicios = ejecucion.getEjerciciosOriginales();
       this.validaSemanticamente = validaSemanticamente;
       this.cantidadErroresSemanticos = cantidadErroresSemanticos;
     }
@@ -294,6 +337,29 @@ java.math.BigInteger entero(String valor) {
 void positivo(String valor, int linea, String descripcion) {
     if (entero(valor).signum() <= 0)
         error(linea, descripcion + " debe ser mayor que cero (se encontró " + valor + ")");
+}
+
+parser.ModificadorRepeticion validarRepeticionVeces(
+    String cantidad, boolean singular, int linea) {
+    java.math.BigInteger vueltas = entero(cantidad);
+    if (vueltas.signum() <= 0) {
+        error(linea, "la cantidad de veces debe ser un entero positivo (se encontró "
+              + cantidad + ")");
+    } else {
+        boolean correspondeSingular = vueltas.equals(java.math.BigInteger.ONE);
+        if (singular != correspondeSingular)
+            error(linea, "la cantidad " + cantidad + " debe concordar con '"
+                  + (correspondeSingular ? "vez" : "veces") + "'");
+    }
+    return new parser.ModificadorRepeticion(vueltas, null);
+}
+
+parser.ModificadorRepeticion validarPorcentajeRepeticion(String porcentaje, int linea) {
+    String cantidad = porcentaje.substring(0, porcentaje.length() - 1);
+    if (entero(cantidad).signum() <= 0)
+        error(linea, "el porcentaje de repetición debe ser positivo (se encontró "
+              + porcentaje + ")");
+    return new parser.ModificadorRepeticion(null, porcentaje);
 }
 
 void validarSeriesReps(String valor, int linea) {
@@ -508,36 +574,38 @@ void validarSuperserie(int ejercicios, int linea) {
     return nombreNuevo && !nombre.trim().isEmpty();
   }
 
-  /* Resuelve solamente los ejercicios. El cuerpo declarado queda intacto para
-     aplicar la repetición, EXCEPTO y la herencia de campos en etapas futuras. */
-  List<parser.ElementoEjercicio> resolverEjercicios(
+  /* Resuelve los ejercicios y conserva una capa por referencia. El cuerpo
+     declarado queda intacto para aplicar EXCEPTO y la herencia más adelante. */
+  parser.EjecucionRutina resolverEjecucion(
       String nombreRutina, parser.CuerpoRutina cuerpo) {
     if (!cuerpo.esReferencia())
-      return cuerpo.ejerciciosPropios;
+      return new parser.EjecucionRutina(cuerpo.ejerciciosPropios,
+          new parser.ModificadorRepeticion(null, null), null);
 
     String referencia = cuerpo.rutinaReferenciada;
     int linea = cuerpo.lineaReferencia;
     if (parser.claveRutina(nombreRutina).equals(parser.claveRutina(referencia))) {
       error(linea, "la rutina '" + nombreRutina + "' no puede referenciarse a sí misma");
-      return Collections.emptyList();
+      return new parser.EjecucionRutina(Collections.emptyList(), cuerpo.repeticion, null);
     }
 
     Optional<parser.Rutina> encontrada = parser.buscarRutina(referencia);
     if (encontrada.isEmpty()) {
       error(linea, "la rutina referenciada '" + referencia
           + "' no existe o todavía no fue declarada");
-      return Collections.emptyList();
+      return new parser.EjecucionRutina(Collections.emptyList(), cuerpo.repeticion, null);
     }
 
     Optional<parser.Rutina> valida = parser.buscarRutinaValida(referencia);
     if (valida.isEmpty()) {
       error(linea, "la rutina referenciada '" + referencia
           + "' es semánticamente inválida y no puede reutilizarse");
-      return Collections.emptyList();
+      return new parser.EjecucionRutina(Collections.emptyList(), cuerpo.repeticion, null);
     }
 
-    /* getEjercicios() ya puede ser el resultado de otra referencia (A -> B -> C). */
-    return valida.get().getEjercicios();
+    parser.Rutina origen = valida.get();
+    return new parser.EjecucionRutina(origen.getEjercicios(), cuerpo.repeticion,
+                                      origen.ejecucion);
   }
 
   List<parser.Campo> unir(List<parser.Campo> a, List<parser.Campo> b) {
@@ -559,8 +627,8 @@ terminal Integer ENTERO;
 /* Persona 2 y 3 (provisorios) */
 terminal SUPERSERIE, FIN, DESCANSO, REPS, VUELTA, ARROBA;
 terminal String SERIES_REPS, SERIES_MAX, SERIES_TIEMPO, CARGA, VELOCIDAD;
-terminal IGUAL_A, EXCEPTO, POR, VEZ;
-terminal String PORCENTAJE;
+terminal IGUAL_A, EXCEPTO, POR, VEZ, VECES;
+terminal String CANTIDAD_REPETICION, PORCENTAJE;
 
 /* ---------------------------------------------------------------------
    No terminales
@@ -633,10 +701,10 @@ rutinas ::= rutinas:l rutina:r
 rutina ::= RUTINA:r inicio_rutina:i CADENA:nom campos_rut:a cuerpo:c campos_rut:b
            {: List<parser.Campo> campos = unir(a, b);
               boolean nombreNuevo = validarRutina(nom, campos, c.esReferencia(), rleft);
-              List<parser.ElementoEjercicio> ejercicios = resolverEjercicios(nom, c);
+              parser.EjecucionRutina ejecucion = resolverEjecucion(nom, c);
               int cantidadErrores = parser.getErroresSemanticos() - i;
               parser.Rutina nueva = new parser.Rutina(
-                  nom, campos, c, ejercicios, cantidadErrores == 0, cantidadErrores);
+                  nom, campos, c, ejecucion, cantidadErrores == 0, cantidadErrores);
               parser.registrarRutina(nueva, nombreNuevo);
               RESULT = nueva; :}
          | RUTINA error
@@ -773,10 +841,12 @@ descanso_opt ::= COMA DESCANSO TIEMPO:t
                ;
 
 
-repeticion_opt ::= POR ENTERO:n VEZ
-                   {: RESULT = new parser.ModificadorRepeticion(n, null); :}
+repeticion_opt ::= POR CANTIDAD_REPETICION:n VEZ
+                   {: RESULT = validarRepeticionVeces(n, true, nleft); :}
+                 | POR CANTIDAD_REPETICION:n VECES
+                   {: RESULT = validarRepeticionVeces(n, false, nleft); :}
                  | PORCENTAJE:p
-                   {: RESULT = new parser.ModificadorRepeticion(null, p); :}
+                   {: RESULT = validarPorcentajeRepeticion(p, pleft); :}
                  | /* vacío */
                    {: RESULT = new parser.ModificadorRepeticion(null, null); :}
                  ;
