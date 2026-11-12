@@ -14,8 +14,8 @@ Intensidad: MEDIA
 Duración: 45m
 Músculos: [Espalda]
 EJERCICIOS:
-  remo 45 grados: 3x8 @ 20kg, descanso 1m
-  circuito base SUPERSERIE 2 vueltas
+  remo 45 grados (agarre neutro): 3x8 @ 20kg, descanso 1m
+  circuito base (suave) SUPERSERIE 2 vueltas
     plancha: 3x30s
     fondos: 8 reps
   FIN SUPERSERIE
@@ -109,13 +109,16 @@ RUTINA "Exclusión vacía"
 Igual a "Base válida" EXCEPTO []
 
 RUTINA "Exclusiones repetidas e inexistentes"
-Igual a "Base válida" EXCEPTO [remo 45 grados, Remo 45 Grados, ejercicio ausente]
+Igual a "Base válida" EXCEPTO [remo 45 grados (agarre neutro), Remo 45 Grados (Agarre neutro), ejercicio ausente]
 
 RUTINA "Declarada más abajo"
-Igual a "Base válida" x 2 veces EXCEPTO [plancha]
+Igual a "Base válida" x 2 veces EXCEPTO [plancha, remo 45 grados (agarre neutro)]
 
 RUTINA "Carácter ilegal"
 Igual a "Base válida" #
+
+RUTINA "Copia de una rutina con error léxico"
+Igual a "Carácter ilegal"
 
 RUTINA "Comillas sin cerrar
 

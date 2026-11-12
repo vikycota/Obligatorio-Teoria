@@ -12,6 +12,18 @@ parser code {:
   public static int errores = 0;
   private int erroresSemanticos = 0;
 
+  /* El lexer marca el token que abrió la rutina, incluso si CUP ya pidió
+     un token de la siguiente al momento de reducir la actual. */
+  public static final class TokenRutina {
+    private boolean tieneErroresLexicos;
+
+    void marcarErrorLexico() { tieneErroresLexicos = true; }
+    boolean tieneErroresLexicos() { return tieneErroresLexicos; }
+
+    @Override
+    public String toString() { return "RUTINA"; }
+  }
+
   /* ===================== MODELO INTERMEDIO =====================
      El cuerpo y los campos originales conservan exactamente lo declarado.
      Por separado, Rutina expone los campos efectivos y los ejercicios
@@ -278,6 +290,7 @@ parser code {:
     public final List<ElementoEjercicio> ejercicios;
     public final boolean validaSemanticamente;
     public final int cantidadErroresSemanticos;
+    public final boolean tieneErroresLexicos;
 
     public Rutina(String nombre, List<Campo> campos, CuerpoRutina cuerpo) {
       this(nombre, campos, cuerpo, true, 0);
@@ -302,6 +315,14 @@ parser code {:
                   List<Campo> camposEfectivos, CuerpoRutina cuerpo,
                   EjecucionRutina ejecucion,
                   boolean validaSemanticamente, int cantidadErroresSemanticos) {
+      this(nombre, camposOriginales, camposEfectivos, cuerpo, ejecucion,
+           validaSemanticamente, cantidadErroresSemanticos, false);
+    }
+
+    public Rutina(String nombre, List<Campo> camposOriginales,
+                  List<Campo> camposEfectivos, CuerpoRutina cuerpo,
+                  EjecucionRutina ejecucion, boolean validaSemanticamente,
+                  int cantidadErroresSemanticos, boolean tieneErroresLexicos) {
       this.nombre = nombre;
       this.camposOriginales = copiarCampos(camposOriginales);
       this.campos = this.camposOriginales;
@@ -311,6 +332,11 @@ parser code {:
       this.ejercicios = ejecucion.getEjerciciosVisibles();
       this.validaSemanticamente = validaSemanticamente;
       this.cantidadErroresSemanticos = cantidadErroresSemanticos;
+      this.tieneErroresLexicos = tieneErroresLexicos;
+    }
+
+    public boolean esValida() {
+      return validaSemanticamente && !tieneErroresLexicos;
     }
 
     private static List<Campo> copiarCampos(List<Campo> campos) {
@@ -359,7 +385,7 @@ parser code {:
 
   /* Punto de entrada seguro para la resolución de Igual a. */
   public Optional<Rutina> buscarRutinaValida(String nombre) {
-    return buscarRutina(nombre).filter(r -> r.validaSemanticamente);
+    return buscarRutina(nombre).filter(Rutina::esValida);
   }
 
   boolean rutinaYaDeclarada(String nombre) {
@@ -707,9 +733,11 @@ action code {:
     }
 
     parser.Rutina origen = encontrada.get();
-    if (!origen.validaSemanticamente) {
+    if (!origen.esValida()) {
+      String motivo = origen.tieneErroresLexicos
+          ? "tiene errores léxicos" : "es semánticamente inválida";
       error(linea, "la rutina referenciada '" + referencia
-          + "' es semánticamente inválida y no puede reutilizarse");
+          + "' " + motivo + " y no puede reutilizarse");
       return null;
     }
 
@@ -789,9 +817,10 @@ action code {:
 
 /* DECLARACIÓN DE TERMINALES */
 terminal NIVEL, OBJETIVOS, SEMANAS, PROFESOR, FECHA_KW;
-terminal RUTINA, DIA, CALENTAMIENTO, INTENSIDAD, DURACION, MUSCULOS,
+terminal parser.TokenRutina RUTINA;
+terminal DIA, CALENTAMIENTO, INTENSIDAD, DURACION, MUSCULOS,
          EQUIPAMIENTO, VARIANTES, EXTRA, OBS, EJERCICIOS;
-terminal DOSPUNTOS, COMA, CORCH_A, CORCH_C, IGUAL;
+terminal DOSPUNTOS, COMA, CORCH_A, CORCH_C, PAREN_A, PAREN_C, IGUAL;
 
 terminal String PLAN, PALABRA, NOMBRE, CADENA, FECHA, FRACCION, ESTRELLAS, TIEMPO, ENTERO;
 
@@ -881,7 +910,7 @@ rutina ::= RUTINA:r inicio_rutina:i CADENA:nom campos_rut:a cuerpo:c campos_rut:
               int cantidadErrores = parser.getErroresSemanticos() - i;
               parser.Rutina nueva = new parser.Rutina(
                   nom, campos, camposEfectivos, c, ejecucion,
-                  cantidadErrores == 0, cantidadErrores);
+                  cantidadErrores == 0, cantidadErrores, r.tieneErroresLexicos());
               parser.registrarRutina(nueva, nombreNuevo);
               RESULT = nueva; :}
          | RUTINA error
@@ -922,14 +951,15 @@ intensidad ::= FRACCION:f   {: RESULT = intensidadFraccion(f, fleft); :}
              | ESTRELLAS:e  {: RESULT = intensidadEstrellas(e, eleft); :}
              | nombre:t     {: RESULT = intensidadTexto(t, tleft); :}
              ;
-/* Los nombres pueden incluir números, palabras compuestas y palabras
-   que tienen otra función en la especificación de un ejercicio. */
+/* Los nombres pueden incluir números, palabras compuestas y aclaraciones
+   entre paréntesis. */
 nombre ::= nombre:n parte_nombre:p {: RESULT = n + " " + p; :}
          | parte_nombre:p {: RESULT = p; :};
 
 parte_nombre ::= PALABRA:p  {: RESULT = p; :}
                | NOMBRE:p   {: RESULT = p; :}
                | ENTERO:p   {: RESULT = p; :}
+               | TIEMPO:p   {: RESULT = p; :}
                | PLAN:p     {: RESULT = p; :}
                | DESCANSO:p {: RESULT = p; :}
                | REPS:p     {: RESULT = p; :}
@@ -938,6 +968,8 @@ parte_nombre ::= PALABRA:p  {: RESULT = p; :}
                | POR:p      {: RESULT = p; :}
                | VEZ:p      {: RESULT = p; :}
                | VECES:p    {: RESULT = p; :}
+               | PAREN_A nombre:n PAREN_C {: RESULT = "(" + n + ")"; :}
+               | PAREN_A PAREN_C          {: RESULT = "()"; :}
                ;
 
 lista ::= CORCH_A items:l CORCH_C {: RESULT = l; :}

@@ -14,6 +14,8 @@ import java_cup.runtime.*;
 %eofval}
 
 %{
+  private parser.TokenRutina rutinaActual;
+
   // Todos los tokens llevan su texto como valor, así los mensajes de
   // error sintáctico pueden mostrar qué token apareció.
   private Symbol symbol(int type) {
@@ -23,6 +25,8 @@ import java_cup.runtime.*;
     return new Symbol(type, yyline + 1, yycolumn + 1, val);
   }
   private void errorLexico(String msg) {
+    if (rutinaActual != null)
+      rutinaActual.marcarErrorLexico();
     parser.reportar(yyline + 1, "léxico", msg);
   }
 %}
@@ -54,7 +58,8 @@ FRACCION = {ENTERO}"/"{ENTERO}
 "Fecha:"                        { return symbol(sym.FECHA_KW); }
 
 /* ---------- Campos de rutina ---------- */
-"RUTINA"                        { return symbol(sym.RUTINA); }
+"RUTINA"                        { rutinaActual = new parser.TokenRutina();
+                                  return symbol(sym.RUTINA, rutinaActual); }
 "Día:" | "Dia:"                 { return symbol(sym.DIA); }
 "Calentamiento:"                { return symbol(sym.CALENTAMIENTO); }
 "Intensidad:"                   { return symbol(sym.INTENSIDAD); }
@@ -101,6 +106,8 @@ FRACCION = {ENTERO}"/"{ENTERO}
 ","                             { return symbol(sym.COMA); }
 "["                             { return symbol(sym.CORCH_A); }
 "]"                             { return symbol(sym.CORCH_C); }
+"("                             { return symbol(sym.PAREN_A); }
+")"                             { return symbol(sym.PAREN_C); }
 "="                             { return symbol(sym.IGUAL); }
 
 {ESPACIO}                       { /* ignorar */ }
