@@ -1,0 +1,158 @@
+PLAN ""
+Nivel: EXPERTO
+Objetivos: []
+Objetivos: [Fuerza, fuerza]
+Semanas: 0
+Semanas: 53
+Profesor: " "
+Fecha: 01/12/26
+Fecha: 29/02/2025
+
+RUTINA "Base válida"
+Día: Lunes
+Intensidad: MEDIA
+Duración: 45m
+Músculos: [Espalda]
+EJERCICIOS:
+  remo 45 grados: 3x8 @ 20kg, descanso 1m
+  circuito base SUPERSERIE 2 vueltas
+    plancha: 3x30s
+    fondos: 8 reps
+  FIN SUPERSERIE
+
+RUTINA ""
+Día: Lunez
+Calentamiento: ""
+Intensidad: EXTREMA
+Intensidad: ******
+Intensidad: 4/4
+Intensidad: 0/5
+Intensidad: 6/5
+Duración: 0m
+Duración: 25h
+Músculos: []
+Músculos: [Pecho, pecho]
+Equipamiento: []
+Equipamiento: [Barra, barra]
+Variantes: []
+Variantes: [Flexiones, flexiones]
+Extra: Objetivo=Fuerza, objetivo=Cardio
+Obs: " "
+EJERCICIOS:
+  remo: 3x8
+
+RUTINA "Campos obligatorios ausentes"
+EJERCICIOS:
+  remo: 3x8
+
+RUTINA "FIN de semana"
+Igual a "Base válida"
+
+RUTINA "base valida"
+Día: Viernes
+Intensidad: BAJA
+Duración: 30m
+Músculos: [Espalda]
+EJERCICIOS:
+  remo: 3x8
+
+RUTINA "Especificaciones inválidas"
+Día: Martes
+Intensidad: BAJA
+Duración: 30m
+Músculos: [Espalda]
+EJERCICIOS:
+  fuerza: 0x0 @ 0kg, descanso 0s
+  al fallo: 0xMAX
+  isométrico: 0x0s
+  cardio: 0m @ 0km/h
+  repeticiones: 0 reps @ 0lb
+  carga alta: 3x8 @ 101%1RM
+  carga nula: 3x8 @ 0%1RM
+  bloque corto SUPERSERIE 1 vuelta
+    remo: 3x8
+  FIN SUPERSERIE, descanso 0s
+  remo FIN-de-semana: 3x8
+  circuito SUPERSERIE-larga SUPERSERIE 2 vueltas
+    plancha: 30s
+    fondos: 8 reps
+  FIN SUPERSERIE
+
+RUTINA "Referencia inexistente"
+Igual a "No declarada"
+
+RUTINA "Referencia adelantada"
+Igual a "Declarada más abajo"
+
+RUTINA "Autorreferencia"
+Igual a "Autorreferencia"
+
+RUTINA "Referencia a una rutina inválida"
+Igual a "Especificaciones inválidas"
+
+RUTINA "Repetición nula"
+Igual a "Base válida" x 0 veces
+
+RUTINA "Falta plural"
+Igual a "Base válida" x 2 vez
+
+RUTINA "Falta singular"
+Igual a "Base válida" x 1 veces
+
+RUTINA "Porcentaje nulo"
+Igual a "Base válida" 0%
+
+RUTINA "Porcentaje de vuelta parcial"
+Igual a "Base válida" 150%
+
+RUTINA "Exclusión vacía"
+Igual a "Base válida" EXCEPTO []
+
+RUTINA "Exclusiones repetidas e inexistentes"
+Igual a "Base válida" EXCEPTO [remo 45 grados, Remo 45 Grados, ejercicio ausente]
+
+RUTINA "Declarada más abajo"
+Igual a "Base válida" x 2 veces EXCEPTO [plancha]
+
+RUTINA "Carácter ilegal"
+Igual a "Base válida" #
+
+RUTINA "Comillas sin cerrar
+
+RUTINA "Unidad desconocida"
+EJERCICIOS:
+  remo: 3x8 @ 60kgs
+
+RUTINA "Ejercicio sin dos puntos"
+EJERCICIOS:
+  remo 3x8
+
+RUTINA "Unidad separada del número"
+EJERCICIOS:
+  remo: 3x8 @ 60 kg
+
+RUTINA "Repetición sin vez ni veces"
+Igual a "Base válida" x 2 vueltas
+
+RUTINA "Extra sin igual"
+Extra: Objetivo Fuerza, Apto=Todos
+Igual a "Base válida"
+
+RUTINA "Sin ejercicios"
+EJERCICIOS:
+
+RUTINA "Superserie sin cierre"
+EJERCICIOS:
+  SUPERSERIE 2 vueltas
+    plancha: 30s
+    fondos: 8 reps
+
+RUTINA "Lista sin corchete de cierre"
+Igual a "Base válida" EXCEPTO [remo 45 grados
+
+RUTINA "Verificación de recuperación"
+Igual a "Base válida"
+Día: Domingoo
+
+RUTINA "Fin de archivo inesperado"
+Igual a "Base válida" x
