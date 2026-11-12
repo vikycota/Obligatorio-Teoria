@@ -1,6 +1,6 @@
 # Analizador de Planes de Entrenamiento
 
-Obligatorio de Teoría de la Computación: analizador léxico (JFlex) y sintáctico (CUP) que lee un plan de entrenamiento, valida su estructura y reporta errores léxicos, sintácticos y semánticos indicando la línea.
+Obligatorio de Teoría de la Computación del año 2026: analizador léxico (JFlex) y sintáctico (CUP) que lee un plan de entrenamiento, valida su estructura y reporta errores léxicos, sintácticos y semánticos indicando la línea.
 
 ## Estructura del proyecto
 
@@ -64,6 +64,8 @@ flowchart TD
 
 1. **Léxico (`scanner.jflex`)** – JFlex convierte las expresiones regulares en un AFD que corta el texto en tokens. Solo controla que cada palabra esté bien formada; no sabe si `Lunez` es un día. Lo que no matchea ningún patrón (`#`, comillas sin cerrar, `60kgs`) es un error léxico.
 2. **Sintáctico (`Parser.cup`)** – CUP genera un parser LALR(1) (autómata de pila) a partir de la gramática y controla que los tokens vengan en un orden válido. Ante un error dentro de una rutina, la regla `rutina ::= RUTINA error` descarta tokens hasta la próxima `RUTINA` y el análisis continúa.
+1. **Léxico (`scanner.jflex`)** – JFlex convierte las expresiones regulares en un AFD que corta el texto en tokens. Solo controla que cada palabra esté bien formada; no sabe si `Lunez` es un día. Lo que no matchea ningún patrón (`#`, comillas sin cerrar, `60kgs`) es un error léxico.
+2. **Sintáctico (`Parser.cup`)** – CUP genera un parser LALR(1) (autómata de pila) a partir de la gramática y controla que los tokens vengan en un orden válido. Ante un error dentro de una rutina, la regla `rutina ::= RUTINA error` descarta tokens hasta la próxima `RUTINA` y el análisis continúa.
 3. **Semántico (acciones de CUP)** – Al reconocer cada campo se llama a su función de validación con el valor y la línea, por ejemplo:
    ```
    | DIA:k PALABRA:d  {: validarDia(d, kleft); ... :}
@@ -113,9 +115,9 @@ Si `LUNES`, `MARTES`, … fueran tokens, `Lunez` produciría un error sintáctic
 
 | Persona | Parte |
 |---|---|
-| 1 | Validación del encabezado (`PLAN`, `Nivel`, `Objetivos`, `Semanas`, `Profesor`, `Fecha`) |
-| 2 | Validación palabra por palabra: reconocimiento de cada token y validación de su valor en las acciones semánticas |
-| 3 | El resto: tipos de ejercicio, unidades, superserie, `Igual a` (`x N vez/veces`, `N%`, `EXCEPTO`) y herencia de campos |
+| Vicky | Analizador léxico y sintáctico del encabezado del plan |
+| Caro | Validación palabra por palabra: reconocimiento de cada token y validación de su valor en las acciones semánticas |
+| Blas | Validaciones propias de cada ejercicio, Validacion que serie sea igual a otra y de Excepto |
 
 ## Pruebas
 
