@@ -11,14 +11,14 @@ Obligatorio-Teoria/
 │   ├── java-cup-11b-20160615-3.jar
 │   └── java-cup-runtime-11b-20160615-3.jar
 └── src/
-    ├── plan.flex            ← analizador léxico (tokens)
-    ├── plan.cup             ← gramática + validaciones + main
+    ├── scanner.jflex            ← analizador léxico (tokens)
+    ├── Parser.cup             ← gramática + validaciones + main
     ├── build.bat            ← genera, compila y ejecuta
     ├── prueba_ok.txt        ← ejemplo de la letra (válido)
-    └── prueba_errores.txt   ← casos con errores a propósito
+    └── prueba_errores_completa.txt   ← casos con errores a propósito
 ```
 
-`Lexer.java`, `parser.java`, `sym.java` y los `.class` **se generan solos** al compilar. No se editan a mano: siempre se modifican `plan.flex` y `plan.cup`.
+`Lexer.java`, `parser.java`, `sym.java` y los `.class` **se generan solos** al compilar. No se editan a mano: siempre se modifican `scanner.jflex` y `Parser.cup`.
 
 ## Requisitos
 
@@ -38,8 +38,8 @@ cd src
 
 `build.bat` hace cuatro pasos y se detiene si alguno falla:
 
-1. JFlex genera `Lexer.java` a partir de `plan.flex`.
-2. CUP genera `parser.java` y `sym.java` a partir de `plan.cup`.
+1. JFlex genera `Lexer.java` a partir de `scanner.jflex`.
+2. CUP genera `parser.java` y `sym.java` a partir de `Parser.cup`.
 3. `javac` compila todo con codificación UTF-8 (por las tildes).
 4. Se ejecuta `parser` con el archivo indicado.
 
@@ -60,8 +60,8 @@ flowchart TD
     D -.-> H["Error semántico<br/>día inválido 'Lunez'"]
 ```
 
-1. **Léxico (`plan.flex`)** – JFlex convierte las expresiones regulares en un AFD que corta el texto en tokens. Solo controla que cada palabra esté bien formada; no sabe si `Lunez` es un día. Lo que no matchea ningún patrón (`#`, comillas sin cerrar, `60kgs`) es un error léxico.
-2. **Sintáctico (`plan.cup`)** – CUP genera un parser LALR(1) (autómata de pila) a partir de la gramática y controla que los tokens vengan en un orden válido. Ante un error dentro de una rutina, la regla `rutina ::= RUTINA error` descarta tokens hasta la próxima `RUTINA` y el análisis continúa.
+1. **Léxico (`scanner.jflex`)** – JFlex convierte las expresiones regulares en un AFD que corta el texto en tokens. Solo controla que cada palabra esté bien formada; no sabe si `Lunez` es un día. Lo que no matchea ningún patrón (`#`, comillas sin cerrar, `60kgs`) es un error léxico.
+2. **Sintáctico (`Parser.cup`)** – CUP genera un parser LALR(1) (autómata de pila) a partir de la gramática y controla que los tokens vengan en un orden válido. Ante un error dentro de una rutina, la regla `rutina ::= RUTINA error` descarta tokens hasta la próxima `RUTINA` y el análisis continúa.
 3. **Semántico (acciones de CUP)** – Al reconocer cada campo se llama a su función de validación con el valor y la línea, por ejemplo:
    ```
    | DIA:k PALABRA:d  {: validarDia(d, kleft); ... :}
@@ -109,15 +109,14 @@ Si `LUNES`, `MARTES`, … fueran tokens, `Lunez` produciría un error sintáctic
 
 | Persona | Parte |
 |---|---|
-| 1 | Validación del encabezado (`PLAN`, `Nivel`, `Objetivos`, `Semanas`, `Profesor`, `Fecha`) |
-| 2 | Validación palabra por palabra: reconocimiento de cada token y validación de su valor en las acciones semánticas |
-| 3 | El resto: tipos de ejercicio, unidades, superserie, `Igual a` (`x N vez/veces`, `N%`, `EXCEPTO`) y herencia de campos |
+| Vicky | Analizador léxico y sintáctico del encabezado del plan |
+| Caro | Validación palabra por palabra: reconocimiento de cada token y validación de su valor en las acciones semánticas |
+| Blas | Validaciones propias de cada ejercicio, Validacion que serie sea igual a otra y de Excepto |
 
 ## Pruebas
 
 ```
-.\build prueba_ok.txt        → Análisis terminado: el plan es válido.
-.\build prueba_errores.txt   → 14 errores (semánticos, sintácticos y uno léxico)
+.\buil prueba_errores_completa.txt
+.\buil prueba_ok.txt
 ```
 
-En `prueba_errores.txt` se puede ver que, después del error sintáctico de la rutina 3, el análisis sigue con la rutina siguiente.
