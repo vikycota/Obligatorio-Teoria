@@ -294,7 +294,7 @@ parser code {:
     public Rutina(String nombre, List<Campo> campos, CuerpoRutina cuerpo,
                   EjecucionRutina ejecucion,
                   boolean validaSemanticamente, int cantidadErroresSemanticos) {
-      this(nombre, campos, copiarCampos(campos), cuerpo, ejecucion,
+      this(nombre, campos, campos, cuerpo, ejecucion,
            validaSemanticamente, cantidadErroresSemanticos);
     }
 
@@ -446,9 +446,9 @@ action code {:
       error(linea, "Semanas debe estar entre 1 y 52 (se encontró " + cantidad + ")");
   }
 
-  void validarProfesor(String profesor, int linea) {
-    if (profesor.trim().isEmpty())
-      error(linea, "el nombre del profesor está vacío");
+  void validarTexto(String texto, int linea, String mensaje) {
+    if (texto.trim().isEmpty())
+      error(linea, mensaje);
   }
 
   void validarFecha(String fecha, int linea) {
@@ -470,12 +470,15 @@ action code {:
   }
 
   /* Objetivos, músculos, equipamiento, variantes: no vacía y sin repetidos */
-  void validarLista(String campo, List<String> l, int linea) {
-    if (l.isEmpty()) { error(linea, "la lista de " + campo + " está vacía"); return; }
+  parser.Campo crearCampoLista(String campo, List<String> valores, int linea) {
+    if (valores.isEmpty())
+      error(linea, "la lista de " + campo + " está vacía");
+
     Set<String> vistos = new HashSet<>();
-    for (String x : l)
-      if (!vistos.add(normalizar(x)))
-        error(linea, campo + ": '" + x + "' está repetido");
+    for (String valor : valores)
+      if (!vistos.add(normalizar(valor)))
+        error(linea, campo + ": '" + valor + "' está repetido");
+    return new parser.Campo(campo, linea, valores);
   }
 
   void validarEncabezado(List<parser.Campo> campos, int linea) {
@@ -493,10 +496,6 @@ action code {:
   void validarDia(String d, int linea) {
     if (!DIAS.contains(normalizar(d)))
       error(linea, "día inválido '" + d + "'");
-  }
-
-  void validarCalentamiento(String c, int linea) {
-    if (c.trim().isEmpty()) error(linea, "el calentamiento está vacío");
   }
 
   /* Intensidad en 3 notaciones. Devuelve el nivel 1..5, o 0 si es inválida.
@@ -543,10 +542,6 @@ action code {:
     if (minutos <= 0) error(linea, "la duración debe ser mayor que 0");
     else if (minutos > 24 * 60) error(linea, "la duración '" + t + "' supera las 24 horas");
     return minutos;
-  }
-
-  void validarObs(String o, int linea) {
-    if (o.trim().isEmpty()) error(linea, "la observación está vacía");
   }
 
   /* Extra: etiqueta=valor, sin etiquetas repetidas */
@@ -598,17 +593,16 @@ action code {:
         error(linea, "a la rutina '" + nombre + "' le falta el campo " + obligatorio);
   }
 
-  /* Combina una copia de los campos efectivos del origen con copias de los
-     campos declarados. LinkedHashMap conserva un orden estable y put hace que
-     la declaración explícita reemplace al valor heredado del mismo campo. */
+  /* Los campos declarados reemplazan a los heredados. Rutina copia los
+     valores al guardar los campos efectivos. */
   List<parser.Campo> resolverCampos(
       List<parser.Campo> declarados, parser.Rutina origen) {
     LinkedHashMap<String, parser.Campo> resueltos = new LinkedHashMap<>();
     if (origen != null)
       for (parser.Campo heredado : origen.getCamposEfectivos())
-        resueltos.put(heredado.nombre, heredado.copiar());
+        resueltos.put(heredado.nombre, heredado);
     for (parser.Campo declarado : declarados)
-      resueltos.put(declarado.nombre, declarado.copiar());
+      resueltos.put(declarado.nombre, declarado);
     return new ArrayList<>(resueltos.values());
   }
 
@@ -728,8 +722,7 @@ action code {:
   parser.EjecucionRutina resolverEjecucion(
       parser.CuerpoRutina cuerpo, parser.Rutina origen) {
     if (!cuerpo.esReferencia())
-      return new parser.EjecucionRutina(cuerpo.ejerciciosPropios,
-          new parser.ModificadorRepeticion(null, null), null);
+      return new parser.EjecucionRutina(cuerpo.ejerciciosPropios, cuerpo.repeticion, null);
     if (origen == null)
       return new parser.EjecucionRutina(
           Collections.emptyList(), cuerpo.repeticion, null);
@@ -752,14 +745,10 @@ action code {:
           error(linea, descripcion + " debe ser mayor que cero (se encontró " + valor + ")");
   }
 
-  void validarSeriesReps(String valor, int linea) {
-      String[] partes = valor.split("x");
-      positivo(partes[0], linea, "la cantidad de series");
-      positivo(partes[1], linea, "la cantidad de repeticiones");
-  }
-
-  void validarSeriesMax(String valor, int linea) {
-      positivo(valor.substring(0, valor.length() - 4), linea, "la cantidad de series");
+  String validarSeries(String valor, int linea) {
+    int separador = valor.indexOf('x');
+    positivo(valor.substring(0, separador), linea, "la cantidad de series");
+    return valor.substring(separador + 1);
   }
 
   void validarTiempoEjercicio(String valor, int linea) {
@@ -767,29 +756,17 @@ action code {:
       positivo(numero, linea, "el tiempo");
   }
 
-  void validarSeriesTiempo(String valor, int linea) {
-      int x = valor.indexOf('x');
-      positivo(valor.substring(0, x), linea, "la cantidad de series");
-      validarTiempoEjercicio(valor.substring(x + 1), linea);
-  }
-
   void validarCarga(String carga, int linea) {
-      String cantidad;
-
-      if (carga.endsWith("%1RM")) {
-          cantidad = carga.substring(0, carga.length() - 4);
-          BigDecimal porcentaje = new BigDecimal(cantidad);
-
-          if (porcentaje.signum() <= 0 ||
-              porcentaje.compareTo(BigDecimal.valueOf(100)) > 0)
-              error(linea, "la carga porcentual '" + carga +
-                    "' debe estar entre 0 y 100 (excluyendo 0)");
-      } else {
-          cantidad = carga.substring(0, carga.length() - 2);
-
-          if (new BigDecimal(cantidad).signum() <= 0)
-              error(linea, "la carga '" + carga + "' debe ser positiva");
-      }
+    boolean esPorcentaje = carga.endsWith("%1RM");
+    int longitudUnidad = esPorcentaje ? 4 : 2;
+    BigDecimal cantidad = new BigDecimal(carga.substring(0, carga.length() - longitudUnidad));
+    if (esPorcentaje) {
+      if (cantidad.signum() <= 0 || cantidad.compareTo(BigDecimal.valueOf(100)) > 0)
+        error(linea, "la carga porcentual '" + carga
+            + "' debe estar entre 0 y 100 (excluyendo 0)");
+    } else if (cantidad.signum() <= 0) {
+      error(linea, "la carga '" + carga + "' debe ser positiva");
+    }
   }
 
   void validarVelocidad(String velocidad, int linea) {
@@ -832,7 +809,7 @@ non terminal Integer inicio_rutina;
 non terminal encabezado;
 non terminal List<parser.Campo> campos_enc, campos_rut;
 non terminal parser.Campo campo_enc, campo_rut;
-non terminal String nombre, parte_nombre;
+non terminal String nombre, parte_nombre, nombre_superserie_opt;
 non terminal List<String> lista, items;
 non terminal Integer intensidad;
 non terminal List<String[]> pares;
@@ -861,7 +838,7 @@ plan ::= encabezado:e rutinas:r
 /* ---------- Encabezado (los campos pueden venir en cualquier orden) ---------- */
 
 encabezado ::= PLAN:p CADENA:nom campos_enc:c
-             {: if (nom.trim().isEmpty()) error(pleft, "el plan no tiene nombre");
+             {: validarTexto(nom, pleft, "el plan no tiene nombre");
                 validarEncabezado(c, pleft); :}
              | PLAN error
              ;
@@ -873,11 +850,12 @@ campos_enc ::= campos_enc:l campo_enc:c  {: l.add(c); RESULT = l; :}
 campo_enc ::= NIVEL:k PALABRA:n
               {: validarNivel(n, kleft); RESULT = new parser.Campo("Nivel", kleft, n); :}
             | OBJETIVOS:k lista:l
-              {: validarLista("Objetivos", l, kleft); RESULT = new parser.Campo("Objetivos", kleft, l); :}
+              {: RESULT = crearCampoLista("Objetivos", l, kleft); :}
             | SEMANAS:k ENTERO:s
               {: validarSemanas(s, kleft); RESULT = new parser.Campo("Semanas", kleft, s); :}
             | PROFESOR:k CADENA:p
-              {: validarProfesor(p, kleft); RESULT = new parser.Campo("Profesor", kleft, p); :}
+              {: validarTexto(p, kleft, "el nombre del profesor está vacío");
+                 RESULT = new parser.Campo("Profesor", kleft, p); :}
             | FECHA_KW:k FECHA:f
               {: validarFecha(f, kleft); RESULT = new parser.Campo("Fecha", kleft, f); :}
             ;
@@ -921,21 +899,23 @@ campos_rut ::= campos_rut:l campo_rut:c  {: l.add(c); RESULT = l; :}
 campo_rut ::= DIA:k PALABRA:d
               {: validarDia(d, kleft); RESULT = new parser.Campo("Día", kleft, d); :}
             | CALENTAMIENTO:k CADENA:c
-              {: validarCalentamiento(c, kleft); RESULT = new parser.Campo("Calentamiento", kleft, c); :}
+              {: validarTexto(c, kleft, "el calentamiento está vacío");
+                 RESULT = new parser.Campo("Calentamiento", kleft, c); :}
             | INTENSIDAD:k intensidad:i
               {: RESULT = new parser.Campo("Intensidad", kleft, i); :}
             | DURACION:k TIEMPO:t
               {: RESULT = new parser.Campo("Duración", kleft, validarDuracion(t, kleft)); :}
             | MUSCULOS:k lista:l
-              {: validarLista("Músculos", l, kleft); RESULT = new parser.Campo("Músculos", kleft, l); :}
+              {: RESULT = crearCampoLista("Músculos", l, kleft); :}
             | EQUIPAMIENTO:k lista:l
-              {: validarLista("Equipamiento", l, kleft); RESULT = new parser.Campo("Equipamiento", kleft, l); :}
+              {: RESULT = crearCampoLista("Equipamiento", l, kleft); :}
             | VARIANTES:k lista:l
-              {: validarLista("Variantes", l, kleft); RESULT = new parser.Campo("Variantes", kleft, l); :}
+              {: RESULT = crearCampoLista("Variantes", l, kleft); :}
             | EXTRA:k pares:p
               {: validarExtra(p, kleft); RESULT = new parser.Campo("Extra", kleft, p); :}
             | OBS:k CADENA:o
-              {: validarObs(o, kleft); RESULT = new parser.Campo("Obs", kleft, o); :}
+              {: validarTexto(o, kleft, "la observación está vacía");
+                 RESULT = new parser.Campo("Obs", kleft, o); :}
             ;
 
 intensidad ::= FRACCION:f   {: RESULT = intensidadFraccion(f, fleft); :}
@@ -991,29 +971,29 @@ lista_ej ::= lista_ej:l ejercicio:e
 ejercicio ::= nombre:n DOSPUNTOS spec:s
               {: validarNombreReservado(n, "del ejercicio", nleft);
                  RESULT = new parser.Ejercicio(n, s); :}
-            | nombre:n SUPERSERIE:k ENTERO:v VUELTA lista_ej:l FIN SUPERSERIE descanso_opt:d
+            | nombre_superserie_opt:n SUPERSERIE:k ENTERO:v VUELTA lista_ej:l FIN SUPERSERIE descanso_opt:d
               {: BigInteger vueltas = entero(v);
-                 validarNombreReservado(n, "de la superserie", nleft);
+                 if (n != null) validarNombreReservado(n, "de la superserie", nleft);
                  validarVueltas(vueltas, vleft);
                  validarSuperserie(l.size(), kleft);
                  RESULT = new parser.Superserie(n, vueltas, l, d); :}
-            | SUPERSERIE:k ENTERO:v VUELTA lista_ej:l FIN SUPERSERIE descanso_opt:d
-              {: BigInteger vueltas = entero(v);
-                 validarVueltas(vueltas, vleft);
-                 validarSuperserie(l.size(), kleft);
-                 RESULT = new parser.Superserie(null, vueltas, l, d); :}
             ;
 
+nombre_superserie_opt ::= nombre:n {: RESULT = n; :}
+                        | /* vacío */ {: RESULT = null; :}
+                        ;
+
 spec ::= SERIES_REPS:r carga_opt:c descanso_opt:d
-         {: validarSeriesReps(r, rleft);
+         {: String repeticiones = validarSeries(r, rleft);
+            positivo(repeticiones, rleft, "la cantidad de repeticiones");
             RESULT = new parser.EspecificacionEjercicio(
                 "SERIES_REPETICIONES", r, c, d, null); :}
        | SERIES_MAX:r descanso_opt:d
-         {: validarSeriesMax(r, rleft);
+         {: validarSeries(r, rleft);
             RESULT = new parser.EspecificacionEjercicio(
                 "SERIES_MAXIMO", r, null, d, null); :}
        | SERIES_TIEMPO:t descanso_opt:d
-         {: validarSeriesTiempo(t, tleft);
+         {: validarTiempoEjercicio(validarSeries(t, tleft), tleft);
             RESULT = new parser.EspecificacionEjercicio(
                 "SERIES_TIEMPO", t, null, d, null); :}
        | ENTERO:r REPS carga_opt:c descanso_opt:d

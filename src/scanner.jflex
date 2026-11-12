@@ -17,7 +17,7 @@ import java_cup.runtime.*;
   // Todos los tokens llevan su texto como valor, así los mensajes de
   // error sintáctico pueden mostrar qué token apareció.
   private Symbol symbol(int type) {
-    return new Symbol(type, yyline + 1, yycolumn + 1, yytext());
+    return symbol(type, yytext());
   }
   private Symbol symbol(int type, Object val) {
     return new Symbol(type, yyline + 1, yycolumn + 1, val);
@@ -30,7 +30,8 @@ import java_cup.runtime.*;
 ESPACIO  = [ \t\r\n\f]+
 DIGITO   = [0-9]
 ENTERO   = {DIGITO}+
-DECIMAL  = {DIGITO}+(\.{DIGITO}+)?
+DECIMAL  = {ENTERO}("."{ENTERO})?
+TIEMPO   = {ENTERO}[hms]
 LETRA    = [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]
 PALABRA  = {LETRA}+
 CADENA   = \"[^\"\r\n]*\"
@@ -73,7 +74,7 @@ FRACCION = {ENTERO}"/"{ENTERO}
 "vuelta" | "vueltas"            { return symbol(sym.VUELTA); }
 {ENTERO}"x"{ENTERO}             { return symbol(sym.SERIES_REPS); }
 {ENTERO}"xMAX"                  { return symbol(sym.SERIES_MAX); }
-{ENTERO}"x"{ENTERO}(h|m|s)      { return symbol(sym.SERIES_TIEMPO); }
+{ENTERO}"x"{TIEMPO}             { return symbol(sym.SERIES_TIEMPO); }
 {DECIMAL}(kg|lb|"%1RM")         { return symbol(sym.CARGA); }
 {DECIMAL}"km/h"                 { return symbol(sym.VELOCIDAD); }
 "@"                             { return symbol(sym.ARROBA); }
@@ -89,7 +90,7 @@ FRACCION = {ENTERO}"/"{ENTERO}
 /* ---------- Valores compartidos ---------- */
 {FECHA}                         { return symbol(sym.FECHA); }
 {FRACCION}                      { return symbol(sym.FRACCION); }
-{ENTERO}(h|m|s)                 { return symbol(sym.TIEMPO); }
+{TIEMPO}                         { return symbol(sym.TIEMPO); }
 \*+                             { return symbol(sym.ESTRELLAS); }
 {ENTERO}                        { return symbol(sym.ENTERO); }
 {CADENA}                        { return symbol(sym.CADENA, yytext().substring(1, yytext().length() - 1)); }
