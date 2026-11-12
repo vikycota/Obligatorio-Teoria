@@ -1,6 +1,6 @@
 # Analizador de Planes de Entrenamiento
 
-Obligatorio de Teoría de la Computación: analizador léxico (JFlex) y sintáctico (CUP) que lee un plan de entrenamiento, valida su estructura y reporta errores léxicos, sintácticos y semánticos indicando la línea.
+Obligatorio de Teoría de la Computación del año 2026: analizador léxico (JFlex) y sintáctico (CUP) que lee un plan de entrenamiento, valida su estructura y reporta errores léxicos, sintácticos y semánticos indicando la línea.
 
 ## Estructura del proyecto
 
